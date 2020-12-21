@@ -28,14 +28,14 @@ parse p = P.parse p ""
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = P.parse (whitespace *> p <* eof) ""
 
-data Expr
-  = Form [Expr]
+data Token
+  = Form String [Token]
   | Num Integer
   | Var String
-  | Quote Expr
+  | Quote Token
   deriving (Show, Eq)
 
-num :: Parser Expr
+num :: Parser Token
 num = Num <$> read <$> (lexeme $ many1 digit)
 
 wsChars :: String
@@ -47,36 +47,39 @@ whitespace = void $ many $ oneOf wsChars
 lexeme :: Parser a -> Parser a
 lexeme p = p <* whitespace
 
-var :: Parser Expr
-var = Var <$> lexeme (many1 $ noneOf $ wsChars ++ "()") 
+varName :: Parser String
+varName = lexeme (many1 $ noneOf $ wsChars ++ "()")  
 
-symbol :: Parser Expr
+var :: Parser Token
+var = Var <$> varName 
+
+symbol :: Parser Token
 symbol = quote <|> form <|> try num <|> var
 
-symbolList :: Parser [Expr]
+symbolList :: Parser [Token]
 symbolList = symbol `sepBy` whitespace
 
-form :: Parser Expr
+form :: Parser Token
 form =
   do
     lexeme (char '(')
-    f <- var
+    f <- varName
     p <- symbolList
     lexeme (char ')')
-    return $ Form (f:p)
+    return $ Form f p
 
-improperForm :: Parser Expr
-improperForm = Form <$>
-  (lexeme (char '(') *> symbolList <* lexeme (char ')'))
+-- improperForm :: Parser Token
+-- improperForm = Form <$>
+--   (lexeme (char '(') *> symbolList <* lexeme (char ')'))
 
-quote :: Parser Expr
+quote :: Parser Token
 quote = Quote <$>
   (lexeme (char '\'') *> form)
 
-statement :: Parser Expr
+statement :: Parser Token
 statement = quote <|> form
 
-statements :: Parser [Expr]
+statements :: Parser [Token]
 statements = many1 statement
 
 parseFile :: String -> IO ()
