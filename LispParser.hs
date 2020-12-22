@@ -8,7 +8,7 @@ import Text.Parsec (try)
 import Text.Parsec.String (Parser)
 import Text.Parsec (ParseError)
 import qualified Text.Parsec.Char as C
-import Text.Parsec.Char (char, digit)
+import Text.Parsec.Char (char, digit, string)
 import Text.Parsec.Combinator (eof, many1, sepBy)
 import Control.Monad (void)
 import Control.Applicative ((<|>), many)
@@ -30,6 +30,7 @@ parseWithEof p = P.parse (whitespace *> p <* eof) ""
 
 data Token
   = Form String [Token]
+  | Def String [String] Token
   | Num Integer
   | Var String
   | Quote Token
@@ -41,6 +42,9 @@ num = Num <$> read <$> (lexeme $ many1 digit)
 wsChars :: String
 wsChars = " \n\t"
 
+some :: Parser a -> Parser (a, [a])
+some p = (,) <$> p <*> many1 p
+
 whitespace :: Parser ()
 whitespace = void $ many $ oneOf wsChars
 
@@ -48,10 +52,10 @@ lexeme :: Parser a -> Parser a
 lexeme p = p <* whitespace
 
 varName :: Parser String
-varName = lexeme (many1 $ noneOf $ wsChars ++ "()")  
+varName = lexeme . many1 . noneOf $ wsChars ++ "()" 
 
 var :: Parser Token
-var = Var <$> varName 
+var = Var <$> varName
 
 symbol :: Parser Token
 symbol = quote <|> form <|> try num <|> var
@@ -59,22 +63,29 @@ symbol = quote <|> form <|> try num <|> var
 symbolList :: Parser [Token]
 symbolList = symbol `sepBy` whitespace
 
+openParen :: Parser Char
+openParen = lexeme (char '(')
+
+closeParen :: Parser Char
+closeParen = lexeme (char ')')
+
 form :: Parser Token
 form =
-  do
-    lexeme (char '(')
-    f <- varName
-    p <- symbolList
-    lexeme (char ')')
-    return $ Form f p
-
--- improperForm :: Parser Token
--- improperForm = Form <$>
---   (lexeme (char '(') *> symbolList <* lexeme (char ')'))
+  Form <$> (openParen  *> varName) <*> (symbolList <* closeParen)
 
 quote :: Parser Token
 quote = Quote <$>
   (lexeme (char '\'') *> form)
+
+defForm :: Parser Token
+defForm =
+  do
+    openParen
+    string "def"
+    (n, args) <- openParen *> some varName <* closeParen
+    e <- symbol
+    closeParen
+    return $ Def n args e
 
 statement :: Parser Token
 statement = quote <|> form
