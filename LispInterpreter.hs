@@ -4,7 +4,7 @@
 module LispInterpreter where
 
 import Data.Tuple (snd)
-import Data.Map.Strict (Map, (!?), fromList, insert, union)
+import Data.Map.Strict (Map, (!?), empty, fromList, insert, union)
 
 import qualified LispParser as P
 
@@ -17,6 +17,9 @@ data Expr
   | Quote Expr
   | Unit
   deriving (Show, Eq, Read)
+
+-- test comment
+-- ANOTHER TEST COMMENT
 
 type Envr = Map String Expr
 type IntrError = String
@@ -71,5 +74,21 @@ interpret env (Sym name) = (env, get env name)
 interpret env (Def name expr) = (, iok Unit) $ insert name expr env
 interpret env numOrQuote = (env, iok numOrQuote)    
 
+interpretStatement :: Envr -> String -> (Envr, IntrResult)
+interpretStatement env token =
+  case P.parseStatement token of
+    Left perror -> (env, ierr (show perror))
+    Right tkn -> interpret env (fromToken tkn)
+
+repl :: Envr -> IO ()
+repl env =
+  do
+    ln <- getLine
+    if (ln == "(quit)")
+      then return ()
+      else let (newEnv, res) = interpretStatement env ln
+            in print res >> repl newEnv
+
 main :: IO ()
-main = print $ P.Num 123
+main = repl empty
+    

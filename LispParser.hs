@@ -81,17 +81,20 @@ defForm :: Parser Token
 defForm =
   do
     openParen
-    string "def"
-    (n, args) <- openParen *> some varName <* closeParen
+    lexeme (string "def")
+    (n:args) <- openParen *> many1 varName <* closeParen
     e <- symbol
     closeParen
     return $ Def n args e
 
 statement :: Parser Token
-statement = quote <|> form
+statement = quote <|> try defForm <|> form
 
 statements :: Parser [Token]
 statements = many1 statement
+
+parseStatement :: String -> Either ParseError Token
+parseStatement = parseWithEof statement
 
 parseFile :: String -> IO ()
 parseFile path =
