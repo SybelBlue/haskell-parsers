@@ -6,21 +6,19 @@
 
 module BayesNetParser where
 
-import qualified Text.Parsec as P
-
 import Control.Monad (void)
 import Control.Applicative ((<|>), many)
 
-import Text.Parsec (ParseError, try, manyTill, lookAhead)
+import Text.Parsec (ParseError, try, manyTill, lookAhead, parse)
 import Text.Parsec.Char (noneOf, oneOf, digit, string)
-import Text.Parsec.Combinator (eof, many1)
+import Text.Parsec.Combinator (eof, many1, sepEndBy)
 import Text.Parsec.String (Parser)
 
 import System.Environment (getArgs)
 
 -- from example code
 parseWithEof :: Parser a -> String -> Either ParseError a
-parseWithEof p = P.parse (whitespace *> p <* eof) ""
+parseWithEof p = parse (whitespace *> p <* eof) ""
 
 whitespaceChars :: [Char]
 whitespaceChars = " \n\t"
@@ -29,37 +27,27 @@ parseFile :: String -> IO ()
 parseFile path =
   do
     text <- readFile path
-    either print print $ parseWithEof script text
+    either print print $ parse script path text
 
 main :: IO ()
 main =
   do
     a <- getArgs
     case a of
-      [str] ->
-        do
-          fText <- readFile str
-          let pRes = parseWithEof script fText
-            in either print print pRes
+      [str] -> parseFile str
       _ -> error "please provide parse file path"
 
 whitespace :: Parser ()
 whitespace = void . many $ oneOf whitespaceChars
 
-eol :: Parser String
-eol =   try (string "\n\r")
-    <|> try (string "\r\n")
-    <|> string "\n"
-    <|> string "\r"
-
 lexeme :: Parser a -> Parser a
 lexeme p = p <* whitespace
 
-num :: Parser String
-num = many digit
+rawSymbol :: Parser String
+rawSymbol = many1 $ noneOf (whitespaceChars ++ "[]")
 
-symLexeme :: Parser String
-symLexeme = lexeme $ many1 $ noneOf (whitespaceChars ++ "[]")
+symbol :: Parser String
+symbol = lexeme $ rawSymbol 
 
 strLexeme :: String -> Parser ()
 strLexeme = void . lexeme . string
@@ -82,21 +70,21 @@ block s p = strLexeme s *> untilDashes p
 node :: Parser Node
 node =
   do
-    name <- symLexeme
-    values <- manyTill symLexeme eol 
+    name <- symbol
+    values <- lexeme $ rawSymbol `sepEndBy` (oneOf " \t")
     return $ Node { name, values }
 
 nodeBlock :: Parser [Node]
 nodeBlock = block "Nodes" node
 
 edge :: Parser Edge
-edge = (,) <$> symLexeme <*> symLexeme
+edge = (,) <$> symbol <*> symbol
 
 edgeBlock :: Parser [Edge] 
 edgeBlock = block "Edges" edge
 
 condition :: Parser Condition
-condition = (,) <$> symLexeme <*> (strLexeme "=" *> symLexeme)
+condition = (,) <$> symbol <*> (strLexeme "=" *> symbol)
 
 probFloat :: Parser Float
 probFloat = read <$> lexeme prob
@@ -105,7 +93,7 @@ probFloat = read <$> lexeme prob
     decimal = (++) <$> string "0." <*> many1 digit
 
 probability :: Parser Probability
-probability = (,) <$> (symLexeme <* strLexeme "=") <*> probFloat
+probability = (,) <$> (symbol <* strLexeme "=") <*> probFloat
 
 squareList :: Parser a -> Parser [a]
 squareList p = strLexeme "[" *> manyTill p (strLexeme "]")
@@ -116,10 +104,10 @@ tableEntry =
     conditions <- squareList condition
     probabilities <- manyTill probability $ lookAhead tableEntryTerminator
     return $ TableEntry { conditions, probabilities }
-    where tableEntryTerminator = string "[" <|> string "---"
+    where tableEntryTerminator = string "[" <|> string "---" <|> (eof *> return [])
 
 cptBlock :: Parser Table
-cptBlock = (,) <$> (strLexeme "CPT" *> symLexeme) <*> untilDashes tableEntry
+cptBlock = (,) <$> (strLexeme "CPT" *> symbol) <*> untilDashes tableEntry
 
 cpts :: Parser [Table]
 cpts = strLexeme "TABLES" *> many cptBlock
