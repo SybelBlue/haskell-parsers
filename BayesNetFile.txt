@@ -1,0 +1,64 @@
+
+
+Nodes
+HoursStudied <3 3-6 >6
+ExamIsDifficult True False
+SleptEnough True False
+ExamGrade A B C D F
+---
+
+Edges
+ExamIsDifficult ExamGrade
+HoursStudied SleptEnough
+HoursStudied ExamGrade
+SleptEnough ExamGrade
+---
+
+TABLES
+
+CPT HoursStudied
+[] <3 = 0.30 3-6 = 0.60 >6 = 0.10
+---
+
+CPT ExamIsDifficult
+[] True = 0.60 False = 0.40
+---
+
+CPT SleptEnough
+[HoursStudied = <3] True = 0.70 False = 0.30
+[HoursStudied = 3-6] True = 0.55 False = 0.45
+[HoursStudied = >6] True = 0.35 False = 0.65
+---
+
+CPT ExamGrade
+[ExamIsDifficult = False  HoursStudied = <3  SleptEnough = False]  A = 0.35 B = 0.30 C = 0.25 D = 0.07 F = 0.03
+[ExamIsDifficult = False  HoursStudied = <3  SleptEnough = True]  A = 0.40 B = 0.28  C = 0.22  D = 0.08  F = 0.02
+[ExamIsDifficult = False  HoursStudied = 3-6  SleptEnough = False]  A = 0.50 B = 0.32  C = 0.15  D = 0.04  F = 0.01
+[ExamIsDifficult = False  HoursStudied = 3-6  SleptEnough = True]  A = 0.56 B = 0.35  C = 0.06  D = 0.02  F = 0.01
+[ExamIsDifficult = False  HoursStudied = >6  SleptEnough = False]  A = 0.55 B = 0.33  C = 0.08  D = 0.03  F = 0.01
+[ExamIsDifficult = False  HoursStudied = >6  SleptEnough = True]  A = 0.60 B = 0.32  C = 0.06  D = 0.01  F = 0.01
+[ExamIsDifficult = True  HoursStudied = <3  SleptEnough = False]  A = 0.10 B = 0.25 C = 0.50 D = 0.09 F = 0.06
+[ExamIsDifficult = True  HoursStudied = <3  SleptEnough = True]  A = 0.13 B = 0.27  C = 0.47  D = 0.08  F = 0.06
+[ExamIsDifficult = True  HoursStudied = 3-6  SleptEnough = False]  A = 0.20 B = 0.40  C = 0.27  D = 0.10  F = 0.03
+[ExamIsDifficult = True  HoursStudied = 3-6  SleptEnough = True]  A = 0.23 B = 0.39  C = 0.25  D = 0.11  F = 0.02
+[   ExamIsDifficult = True
+    HoursStudied = >6
+    SleptEnough = False
+    ]
+    A = 0.25
+    B = 0.40
+    C = 0.23
+    D = 0.10
+    F = 0.01
+
+[   ExamIsDifficult = True
+    HoursStudied = >6
+    SleptEnough = True
+    ]
+        A = 0.27
+        B = 0.42
+        C = 0.25
+        D = 0.05
+        F = 0.01
+---
+
