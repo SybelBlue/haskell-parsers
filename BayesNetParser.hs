@@ -1,8 +1,7 @@
 -- | made as practice
 -- | designed to parse the BayesNet files
-{-# OPTIONS -fno-warn-unused-do-bind #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
+--{-# OPTIONS -fno-warn-unused-do-bind #-}  -- don't warn on unused parse captures
+{-# LANGUAGE NamedFieldPuns #-}  -- allow Rust-like record construction
 
 module BayesNetParser where
 
@@ -16,7 +15,6 @@ import Text.Parsec.String (Parser)
 
 import System.Environment (getArgs)
 
--- from example code
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (whitespace *> p <* eof) ""
 
@@ -114,4 +112,3 @@ cpts = strLexeme "TABLES" *> many cptBlock
 
 script :: Parser ([Node], [Edge], [Table])
 script = whitespace *> ((,,) <$> nodeBlock <*> edgeBlock <*> cpts)
-

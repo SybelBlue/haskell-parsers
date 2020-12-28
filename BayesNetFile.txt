@@ -1,33 +1,30 @@
 
 
 Nodes
-HoursStudied <3 3-6 >6
-ExamIsDifficult True False
-SleptEnough True False
-ExamGrade A B C D F
+    HoursStudied <3 3-6 >6
+    ExamIsDifficult True False
+    SleptEnough True False
+    ExamGrade A B C D F
 ---
 
 Edges
-ExamIsDifficult ExamGrade
-HoursStudied SleptEnough
-HoursStudied ExamGrade
-SleptEnough ExamGrade
+    ExamIsDifficult ExamGrade
+    HoursStudied SleptEnough
+    HoursStudied ExamGrade
+    SleptEnough ExamGrade
 ---
 
 TABLES
 
 CPT HoursStudied
-[] <3 = 0.30 3-6 = 0.60 >6 = 0.10
----
+    [] <3 = 0.30 3-6 = 0.60 >6 = 0.10 ---
 
-CPT ExamIsDifficult
-[] True = 0.60 False = 0.40
----
+CPT ExamIsDifficult [] True = 0.60 False = 0.40 ---
 
 CPT SleptEnough
-[HoursStudied = <3] True = 0.70 False = 0.30
-[HoursStudied = 3-6] True = 0.55 False = 0.45
-[HoursStudied = >6] True = 0.35 False = 0.65
+    [HoursStudied = <3]  True = 0.70 False = 0.30
+    [HoursStudied = 3-6] True = 0.55 False = 0.45
+    [HoursStudied = >6]  True = 0.35 False = 0.65
 ---
 
 CPT ExamGrade
