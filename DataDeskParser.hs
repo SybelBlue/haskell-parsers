@@ -12,11 +12,14 @@ import Control.Monad (void)
 -- import Control.Applicative ((<|>), many)
 
 import Text.Parsec 
-import Text.Parsec.Char 
-import Text.Parsec.Combinator (eof, many1, sepEndBy)
+-- import Text.Parsec.Char 
+import Text.Parsec.Combinator (eof, sepEndBy)
 import Text.Parsec.String (Parser)
 
 import System.Environment (getArgs)
+
+failNothing :: Monad m => String -> Maybe a -> m a
+failNothing msg = maybe (fail msg) return
 
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (spaces *> p <* eof) ""
@@ -64,15 +67,14 @@ doubleColon = void $ lexeme $ string "::"
 
 numberLiteral :: Parser String
 numberLiteral = lexeme $
-  (:) <$> digit <*> many1 (alphaNum <|> char '.')
+  (:) <$> digit <*> many (alphaNum <|> char '.')
 
 betweenCharPair :: (Char, Char) -> Parser a -> Parser a
 betweenCharPair (a, b) = between (lexeme $ char a) (lexeme $ char b)
 
 stringLiteral :: Parser String
 stringLiteral = betweenCharPair ('"', '"') (many innerChar)
-  where
-    innerChar = noneOf ['\\','\"'] <|> escapedChar
+  where innerChar = noneOf ['\\','\"'] <|> escapedChar
 
 escapedChar :: Parser Char
 escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
@@ -101,19 +103,20 @@ data BinOp
 findPair :: (Foldable f, Eq a) => a -> f (a, b) -> Maybe b
 findPair x = fmap snd . find (\(s, _) -> s == x)
 
+-- Warning: in precedence order
 binOpPairs :: [(String, BinOp)]
 binOpPairs = 
-  [ ("+", Plus)
-  , ("-", Minus)
-  , ("*", Mult)
-  , ("/", Div)  
-  , ("%", Mod)
+  [ ("&&", BoolAnd)
+  , ("||", BoolOr)
   , ("<<", LBS)
   , (">>", RBS)
   , ("&", BitAnd)
   , ("|", BitOr)
-  , ("&&", BoolAnd)
-  , ("||", BoolOr)
+  , ("*", Mult)
+  , ("/", Div)  
+  , ("%", Mod)
+  , ("+", Plus)
+  , ("-", Minus)
   ]
 
 toBinOp :: String -> Maybe BinOp
@@ -152,37 +155,24 @@ simpleExpression = (NumLit <$> numberLiteral)
          <|> Idntfr <$> identifier
 
 expression :: Parser Expr
-expression = binaryExpression <|> simpleExpression
+expression = try binaryExpression <|> simpleExpression
 
 unaryExpression :: Parser Expr
 unaryExpression =
   do
-    maybeOp <- toUnrOp <$> oneOf (fst <$> unrOpPairs)
-    case maybeOp of
-      Nothing -> fail "expected unary operator"
-      Just op ->
-        do
-          expr <- expression
-          return $ UnrExp op expr
+    maybeOp <- lexeme $ toUnrOp <$> oneOf (fst <$> unrOpPairs)
+    op <- failNothing "expected unary operator" maybeOp
+    UnrExp op <$> expression
 
 binaryOps :: Parser String
-binaryOps = choice (string . fst <$> binOpPairs)
+binaryOps = lexeme $ choice (string . fst <$> binOpPairs)
 
+-- TODO Use Text.Parsec.Expr to respect operator precedence
 binaryOperation :: Parser BinOp
-binaryOperation =
-  do
-    maybeOp <- toBinOp <$> binaryOps
-    case maybeOp of
-      Nothing -> fail "expected binary operator"
-      Just op -> return op
+binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operator"
 
 binaryExpression :: Parser Expr
-binaryExpression =
-  do
-    first <- simpleExpression
-    op <- binaryOperation
-    second <- expression
-    return $ BinExp first op second
+binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
     
 data Decl = Decl String Type deriving (Show, Eq)
 
@@ -192,15 +182,15 @@ type UnionLiteral = [Decl]
 data Type
   = Pointer Type
   | TIdntfr String
-  | Struct StructLiteral
-  | Union UnionLiteral
+  | TStruct StructLiteral
+  | TUnion UnionLiteral
   | Array Expr Type
   deriving (Show, Eq)
 
 typeP :: Parser Type
 typeP = star
-    <|> try (Struct <$> structLiteral)
-    <|> try (Union <$> unionLiteral)
+    <|> (TStruct <$> structLiteral)
+    <|> (TUnion <$> unionLiteral)
     <|> array 
     <|> (TIdntfr <$> identifier)
     where
@@ -208,13 +198,49 @@ typeP = star
       array = Array <$> (betweenCharPair ('[', ']') expression) <*> typeP
 
 declaration :: Parser Decl
-declaration = Decl <$> (identifier <* colon) <*> (typeP <* semicolon)
+declaration = Decl <$> identifier <* colon <*> typeP <* semicolon
 
 declarationList :: Parser [Decl]
-declarationList = betweenCharPair ('{', '}') (many declaration)
+declarationList = betweenBraces (many declaration)
+
+betweenBraces :: Parser a -> Parser a
+betweenBraces = betweenCharPair ('{', '}') 
+
+keywordThen :: String -> Parser a -> Parser a
+keywordThen k p = (try $ keyword k) *> p
 
 unionLiteral :: Parser StructLiteral
-unionLiteral = (lexeme $ string "union") *> declarationList
+unionLiteral = "union" `keywordThen` declarationList
 
 structLiteral :: Parser StructLiteral
-structLiteral = (lexeme $ string "struct") *> declarationList
+structLiteral = "struct" `keywordThen` declarationList
+
+data Statement
+  = Union String UnionLiteral
+  | Struct String StructLiteral
+  | Flags String FlagsLiteral
+  | Enum String EnumLiteral
+  | Const String Expr
+  | Proc [Decl] (Maybe Type)
+  deriving (Show, Eq)
+
+type FlagsLiteral = [String]
+type EnumLiteral = [String]
+
+statement :: Parser Statement
+statement  = (identified Union unionLiteral)
+         <|> (identified Struct structLiteral)
+         <|> (identified Flags flagsLiteral)
+         <|> (identified Enum enumLiteral)
+
+identified :: (String -> a -> Statement) -> Parser a -> Parser Statement
+identified f p = f <$> (identifier <* doubleColon) <*> p
+
+identifierList :: Parser [String]
+identifierList = betweenBraces (identifier `sepEndBy` (lexeme $ oneOf [',', ';']))
+
+flagsLiteral :: Parser FlagsLiteral
+flagsLiteral = "flags" `keywordThen` identifierList
+
+enumLiteral :: Parser EnumLiteral
+enumLiteral = "enum" `keywordThen` identifierList
