@@ -55,10 +55,10 @@ lexeme p = p <* spaces
 identifierChar :: Parser Char
 identifierChar = alphaNum <|> char '_'
 
-keyword :: String -> Parser String
+keyword :: String -> Parser Identifier
 keyword s = lexeme (string s <* notFollowedBy identifierChar)
 
-identifier :: Parser String
+identifier :: Parser Identifier
 identifier = lexeme ((:) <$> letter <*> many identifierChar)
 
 strLexeme :: String -> Parser ()
@@ -147,7 +147,7 @@ toUnrOp :: Char -> Maybe UnrOp
 toUnrOp c = findPair c unrOpPairs
 
 data Expr
-  = Idntfr String
+  = Idntfr Identifier
   | NumLit String
   | StrLit String
   | ChrLit Char
@@ -181,9 +181,11 @@ binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operato
 
 binaryExpression :: Parser Expr
 binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
-    
+
+type Identifier = String
+
 data Declaration
-  = Decl String Type
+  = Decl Identifier Type
   | DeclTags [Tag] Declaration
   deriving (Show, Eq)
 
@@ -192,7 +194,7 @@ type UnionLiteral = [Declaration]
 
 data Type
   = Pointer Type
-  | TIdntfr String
+  | TIdntfr Identifier
   | TStruct StructLiteral
   | TUnion UnionLiteral
   | Array Expr Type
@@ -218,7 +220,7 @@ declarationList = betweenBraces (declaration `sepEndBy` semicolonOrComma)
 betweenBraces :: Parser a -> Parser a
 betweenBraces = betweenChars ('{', '}') 
 
-keywordThen :: String -> Parser a -> Parser a
+keywordThen :: Identifier -> Parser a -> Parser a
 keywordThen k p = (try $ keyword k) *> p
 
 unionLiteral :: Parser StructLiteral
@@ -228,17 +230,17 @@ structLiteral :: Parser StructLiteral
 structLiteral = "struct" `keywordThen` declarationList
 
 data Statement
-  = Union String UnionLiteral
-  | Struct String StructLiteral
-  | Flags String FlagsLiteral
-  | Enum String EnumLiteral
-  | Const String Expr
-  | Proc String [Declaration] (Maybe Type)
+  = Union Identifier UnionLiteral
+  | Struct Identifier StructLiteral
+  | Flags Identifier FlagsLiteral
+  | Enum Identifier EnumLiteral
+  | Const Identifier Expr
+  | Proc Identifier [Declaration] (Maybe Type)
   | Tagged [Tag] Statement
   deriving (Show, Eq)
 
-type FlagsLiteral = [String]
-type EnumLiteral = [String]
+type FlagsLiteral = [Identifier]
+type EnumLiteral = [Identifier]
 
 statement :: Parser Statement
 statement = skipMany (try comment) *> ((Tagged <$> many1 tag) <|> return id) <*> simpleStatement
@@ -260,10 +262,10 @@ lineComment = void . lexeme $ (string "//") *> manyTill anyChar eol
 blockComment :: Parser ()
 blockComment = void . lexeme $ (string "/*") *> manyTill anyChar (try $ string "*/")
 
-identified :: (String -> a -> Statement) -> Parser a -> Parser Statement
+identified :: (Identifier -> a -> Statement) -> Parser a -> Parser Statement
 identified f p = try (f <$> (identifier <* doubleColon) <*> p)
 
-identifierList :: Parser [String]
+identifierList :: Parser [Identifier]
 identifierList = betweenBraces (identifier `sepEndBy` semicolonOrComma)
 
 flagsLiteral :: Parser FlagsLiteral
@@ -272,7 +274,7 @@ flagsLiteral = "flags" `keywordThen` identifierList
 enumLiteral :: Parser EnumLiteral
 enumLiteral = "enum" `keywordThen` identifierList
 
-data Tag = Tag String [Expr] deriving (Show, Eq)
+data Tag = Tag Identifier [Expr] deriving (Show, Eq)
 
 tag :: Parser Tag
 tag = Tag <$> ((lexeme $ char '@') *> identifier) <*> (try argList <|> return [])
@@ -280,7 +282,7 @@ tag = Tag <$> ((lexeme $ char '@') *> identifier) <*> (try argList <|> return []
 genericParamList :: Parser a -> Parser [a]
 genericParamList = betweenChars ('(', ')') . flip sepEndBy (lexeme $ char ',')
 
-paramList :: Parser [String]
+paramList :: Parser [Identifier]
 paramList = genericParamList identifier
 
 argList :: Parser [Expr]
