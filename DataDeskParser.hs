@@ -4,8 +4,6 @@
 
 module DataDeskParser where
 
-import Debug.Trace (traceId)
-
 import Data.List (find)
 import Data.Tuple (fst, snd)
 import Data.Maybe (fromJust)
@@ -146,15 +144,6 @@ unrOpPairs =
 toUnrOp :: Char -> Maybe UnrOp
 toUnrOp c = findPair c unrOpPairs
 
-data Expr
-  = Idntfr Identifier
-  | NumLit String
-  | StrLit String
-  | ChrLit Char
-  | BinExp Expr BinOp Expr
-  | UnrExp UnrOp Expr
-  deriving (Show, Eq)
-
 simpleExpression :: Parser Expr
 simpleExpression = (NumLit <$> numberLiteral)
          <|> (StrLit <$> stringLiteral)
@@ -184,6 +173,9 @@ binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expressio
 
 type Identifier = String
 
+type FlagsLiteral = [Identifier]
+type EnumLiteral = [Identifier]
+
 data Declaration
   = Decl Identifier Type
   | DeclTags [Tag] Declaration
@@ -192,12 +184,31 @@ data Declaration
 type StructLiteral = [Declaration]
 type UnionLiteral = [Declaration]
 
+data Expr
+  = Idntfr Identifier
+  | NumLit String
+  | StrLit String
+  | ChrLit Char
+  | BinExp Expr BinOp Expr
+  | UnrExp UnrOp Expr
+  deriving (Show, Eq)
+
 data Type
   = Pointer Type
   | TIdntfr Identifier
   | TStruct StructLiteral
   | TUnion UnionLiteral
   | Array Expr Type
+  deriving (Show, Eq)
+
+data Statement
+  = Union Identifier UnionLiteral
+  | Struct Identifier StructLiteral
+  | Flags Identifier FlagsLiteral
+  | Enum Identifier EnumLiteral
+  | Const Identifier Expr
+  | Proc Identifier [Declaration] (Maybe Type)
+  | Tagged [Tag] Statement
   deriving (Show, Eq)
 
 typeP :: Parser Type
@@ -228,19 +239,6 @@ unionLiteral = "union" `keywordThen` declarationList
 
 structLiteral :: Parser StructLiteral
 structLiteral = "struct" `keywordThen` declarationList
-
-data Statement
-  = Union Identifier UnionLiteral
-  | Struct Identifier StructLiteral
-  | Flags Identifier FlagsLiteral
-  | Enum Identifier EnumLiteral
-  | Const Identifier Expr
-  | Proc Identifier [Declaration] (Maybe Type)
-  | Tagged [Tag] Statement
-  deriving (Show, Eq)
-
-type FlagsLiteral = [Identifier]
-type EnumLiteral = [Identifier]
 
 statement :: Parser Statement
 statement = skipMany (try comment) *> ((Tagged <$> many1 tag) <|> return id) <*> simpleStatement
