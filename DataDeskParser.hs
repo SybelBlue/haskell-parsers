@@ -91,6 +91,74 @@ escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
 charLiteral :: Parser Char
 charLiteral = betweenChars ('\'', '\'') innerChar
   where innerChar = notChar '\\' <|> escapedChar
+toUnrOp :: Char -> Maybe UnrOp
+toUnrOp c = findPair c unrOpPairs
+
+simpleExpression :: Parser Expr
+simpleExpression = (NumLit <$> numberLiteral)
+         <|> (StrLit <$> stringLiteral)
+         <|> (ChrLit <$> charLiteral)
+         <|> unaryExpression
+         <|> Idntfr <$> identifier
+
+expression :: Parser Expr
+expression = try binaryExpression <|> simpleExpression
+
+unaryExpression :: Parser Expr
+unaryExpression =
+  do
+    maybeOp <- lexeme $ toUnrOp <$> oneOf (fst <$> unrOpPairs)
+    op <- failNothing "expected unary operator" maybeOp
+    UnrExp op <$> expression
+
+binaryOps :: Parser String
+binaryOps = lexeme $ choice (string . fst <$> binOpPairs)
+
+-- TODO Use Text.Parsec.Expr to respect operator precedence
+binaryOperation :: Parser BinOp
+binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operator"
+
+binaryExpression :: Parser Expr
+binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
+
+type Identifier = String
+
+type FlagsLiteral = [Identifier]
+type EnumLiteral = [Identifier]
+
+data Tag = Tag Identifier [Expr] deriving (Show, Eq)
+
+data Declaration = Declaration [Tag] Identifier Type deriving (Show, Eq)
+
+type StructLiteral = [Declaration]
+type UnionLiteral = [Declaration]
+
+data Expr
+  = Idntfr Identifier
+  | NumLit String
+  | StrLit String
+  | ChrLit Char
+  | BinExp Expr BinOp Expr
+  | UnrExp UnrOp Expr
+  deriving (Show, Eq)
+
+data Type
+  = Pointer Type
+  | TIdntfr Identifier
+  | TStruct StructLiteral
+  | TUnion UnionLiteral
+  | Array Expr Type
+  deriving (Show, Eq)
+
+data Statement
+  = Union Identifier UnionLiteral
+  | Struct Identifier StructLiteral
+  | Flags Identifier FlagsLiteral
+  | Enum Identifier EnumLiteral
+  | Const Identifier Expr
+  | Proc Identifier [Declaration] (Maybe Type)
+  | Tagged [Tag] Statement
+  deriving (Show, Eq)
 
 data BinOp
   = Plus
@@ -141,76 +209,6 @@ unrOpPairs =
   , ('~', BitNeg)
   ]
 
-toUnrOp :: Char -> Maybe UnrOp
-toUnrOp c = findPair c unrOpPairs
-
-simpleExpression :: Parser Expr
-simpleExpression = (NumLit <$> numberLiteral)
-         <|> (StrLit <$> stringLiteral)
-         <|> (ChrLit <$> charLiteral)
-         <|> unaryExpression
-         <|> Idntfr <$> identifier
-
-expression :: Parser Expr
-expression = try binaryExpression <|> simpleExpression
-
-unaryExpression :: Parser Expr
-unaryExpression =
-  do
-    maybeOp <- lexeme $ toUnrOp <$> oneOf (fst <$> unrOpPairs)
-    op <- failNothing "expected unary operator" maybeOp
-    UnrExp op <$> expression
-
-binaryOps :: Parser String
-binaryOps = lexeme $ choice (string . fst <$> binOpPairs)
-
--- TODO Use Text.Parsec.Expr to respect operator precedence
-binaryOperation :: Parser BinOp
-binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operator"
-
-binaryExpression :: Parser Expr
-binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
-
-type Identifier = String
-
-type FlagsLiteral = [Identifier]
-type EnumLiteral = [Identifier]
-
-data Declaration
-  = Decl Identifier Type
-  | DeclTags [Tag] Declaration
-  deriving (Show, Eq)
-
-type StructLiteral = [Declaration]
-type UnionLiteral = [Declaration]
-
-data Expr
-  = Idntfr Identifier
-  | NumLit String
-  | StrLit String
-  | ChrLit Char
-  | BinExp Expr BinOp Expr
-  | UnrExp UnrOp Expr
-  deriving (Show, Eq)
-
-data Type
-  = Pointer Type
-  | TIdntfr Identifier
-  | TStruct StructLiteral
-  | TUnion UnionLiteral
-  | Array Expr Type
-  deriving (Show, Eq)
-
-data Statement
-  = Union Identifier UnionLiteral
-  | Struct Identifier StructLiteral
-  | Flags Identifier FlagsLiteral
-  | Enum Identifier EnumLiteral
-  | Const Identifier Expr
-  | Proc Identifier [Declaration] (Maybe Type)
-  | Tagged [Tag] Statement
-  deriving (Show, Eq)
-
 typeP :: Parser Type
 typeP = star
     <|> (TStruct <$> structLiteral)
@@ -222,8 +220,7 @@ typeP = star
       array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
 
 declaration :: Parser Declaration
-declaration = (DeclTags <$> (many1 tag) <*> declaration)
-  <|> (Decl <$> identifier <* colon <*> typeP)
+declaration = Declaration <$> (many tag) <*> (identifier <* colon) <*> typeP
 
 declarationList :: Parser [Declaration]
 declarationList = betweenBraces (declaration `sepEndBy` semicolonOrComma)
@@ -271,8 +268,6 @@ flagsLiteral = "flags" `keywordThen` identifierList
 
 enumLiteral :: Parser EnumLiteral
 enumLiteral = "enum" `keywordThen` identifierList
-
-data Tag = Tag Identifier [Expr] deriving (Show, Eq)
 
 tag :: Parser Tag
 tag = Tag <$> ((lexeme $ char '@') *> identifier) <*> (try argList <|> return [])
