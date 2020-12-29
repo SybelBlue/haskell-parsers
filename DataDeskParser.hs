@@ -4,6 +4,8 @@
 
 module DataDeskParser where
 
+import Debug.Trace (traceId)
+
 import Data.List (find)
 import Data.Tuple (fst, snd)
 import Data.Maybe (fromJust)
@@ -24,22 +26,25 @@ failNothing msg = maybe (fail msg) return
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (spaces *> p <* eof) ""
 
+eol :: Parser ()
+eol = (void . lexeme $ char '\n') <|> eof
+
 whitespaceChars :: [Char]
 whitespaceChars = " \n\t"
 
--- parseFile :: String -> IO ()
--- parseFile path =
---   do
---     text <- readFile path
---     either print print $ parse script path text
+parseFile :: String -> IO ()
+parseFile path =
+  do
+    text <- readFile path
+    either print print $ parse script path text
 
--- main :: IO ()
--- main =
---   do
---     a <- getArgs
---     case a of
---       [str] -> parseFile str
---       _ -> error "please provide parse file path"
+main :: IO ()
+main =
+  do
+    a <- getArgs
+    case a of
+      [str] -> parseFile str
+      _ -> error "please provide parse file path"
 
 notChar :: Char -> Parser Char
 notChar c = satisfy (c /=)
@@ -47,17 +52,20 @@ notChar c = satisfy (c /=)
 lexeme :: Parser a -> Parser a
 lexeme p = p <* spaces 
 
+identifierChar :: Parser Char
+identifierChar = alphaNum <|> char '_'
+
 keyword :: String -> Parser String
-keyword s = lexeme (string s <* notFollowedBy alphaNum)
+keyword s = lexeme (string s <* notFollowedBy identifierChar)
 
 identifier :: Parser String
-identifier = lexeme ((:) <$> letter <*> many alphaNum)
+identifier = lexeme ((:) <$> letter <*> many identifierChar)
 
 strLexeme :: String -> Parser ()
 strLexeme = void . lexeme . string
 
-semicolon :: Parser ()
-semicolon = void $ lexeme $ char ';'
+semicolonOrComma :: Parser ()
+semicolonOrComma = void $ lexeme $ oneOf [';', ',']
 
 colon :: Parser ()
 colon = void $ lexeme $ char ':'
@@ -69,11 +77,11 @@ numberLiteral :: Parser String
 numberLiteral = lexeme $
   (:) <$> digit <*> many (alphaNum <|> char '.')
 
-betweenCharPair :: (Char, Char) -> Parser a -> Parser a
-betweenCharPair (a, b) = between (lexeme $ char a) (lexeme $ char b)
+betweenChars :: (Char, Char) -> Parser a -> Parser a
+betweenChars (a, b) = between (lexeme $ char a) (lexeme $ char b)
 
 stringLiteral :: Parser String
-stringLiteral = betweenCharPair ('"', '"') (many innerChar)
+stringLiteral = betweenChars ('"', '"') (many innerChar)
   where innerChar = noneOf ['\\','\"'] <|> escapedChar
 
 escapedChar :: Parser Char
@@ -83,7 +91,7 @@ escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
     getEscape x = fromJust $ findPair x escapedPairs
 
 charLiteral :: Parser Char
-charLiteral = betweenCharPair ('\'', '\'') innerChar
+charLiteral = betweenChars ('\'', '\'') innerChar
   where innerChar = notChar '\\' <|> escapedChar
 
 data BinOp
@@ -174,10 +182,13 @@ binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operato
 binaryExpression :: Parser Expr
 binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
     
-data Decl = Decl String Type deriving (Show, Eq)
+data Declaration
+  = Decl String Type
+  | DeclTags [Tag] Declaration
+  deriving (Show, Eq)
 
-type StructLiteral = [Decl]
-type UnionLiteral = [Decl]
+type StructLiteral = [Declaration]
+type UnionLiteral = [Declaration]
 
 data Type
   = Pointer Type
@@ -195,16 +206,17 @@ typeP = star
     <|> (TIdntfr <$> identifier)
     where
       star = (lexeme $ char '*') *> (Pointer <$>  typeP)
-      array = Array <$> (betweenCharPair ('[', ']') expression) <*> typeP
+      array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
 
-declaration :: Parser Decl
-declaration = Decl <$> identifier <* colon <*> typeP <* semicolon
+declaration :: Parser Declaration
+declaration = (DeclTags <$> (many1 tag) <*> declaration)
+  <|> (Decl <$> identifier <* colon <*> typeP)
 
-declarationList :: Parser [Decl]
-declarationList = betweenBraces (many declaration)
+declarationList :: Parser [Declaration]
+declarationList = betweenBraces (declaration `sepEndBy` semicolonOrComma)
 
 betweenBraces :: Parser a -> Parser a
-betweenBraces = betweenCharPair ('{', '}') 
+betweenBraces = betweenChars ('{', '}') 
 
 keywordThen :: String -> Parser a -> Parser a
 keywordThen k p = (try $ keyword k) *> p
@@ -221,26 +233,59 @@ data Statement
   | Flags String FlagsLiteral
   | Enum String EnumLiteral
   | Const String Expr
-  | Proc [Decl] (Maybe Type)
+  | Proc String [Declaration] (Maybe Type)
+  | Tagged [Tag] Statement
   deriving (Show, Eq)
 
 type FlagsLiteral = [String]
 type EnumLiteral = [String]
 
 statement :: Parser Statement
-statement  = (identified Union unionLiteral)
+statement = skipMany (try comment) *> ((Tagged <$> many1 tag) <|> return id) <*> simpleStatement
+
+simpleStatement :: Parser Statement
+simpleStatement = (identified Union unionLiteral)
          <|> (identified Struct structLiteral)
          <|> (identified Flags flagsLiteral)
          <|> (identified Enum enumLiteral)
+         -- <|> (identified Proc (proc-stuff))
+         <|> (identified Const expression)
+
+comment :: Parser ()
+comment = (try lineComment) <|> (try blockComment)
+
+lineComment :: Parser ()
+lineComment = void . lexeme $ (string "//") *> manyTill anyChar eol
+
+blockComment :: Parser ()
+blockComment = void . lexeme $ (string "/*") *> manyTill anyChar (try $ string "*/")
 
 identified :: (String -> a -> Statement) -> Parser a -> Parser Statement
-identified f p = f <$> (identifier <* doubleColon) <*> p
+identified f p = try (f <$> (identifier <* doubleColon) <*> p)
 
 identifierList :: Parser [String]
-identifierList = betweenBraces (identifier `sepEndBy` (lexeme $ oneOf [',', ';']))
+identifierList = betweenBraces (identifier `sepEndBy` semicolonOrComma)
 
 flagsLiteral :: Parser FlagsLiteral
 flagsLiteral = "flags" `keywordThen` identifierList
 
 enumLiteral :: Parser EnumLiteral
 enumLiteral = "enum" `keywordThen` identifierList
+
+data Tag = Tag String [Expr] deriving (Show, Eq)
+
+tag :: Parser Tag
+tag = Tag <$> ((lexeme $ char '@') *> identifier) <*> (try argList <|> return [])
+
+genericParamList :: Parser a -> Parser [a]
+genericParamList = betweenChars ('(', ')') . flip sepEndBy (lexeme $ char ',')
+
+paramList :: Parser [String]
+paramList = genericParamList identifier
+
+argList :: Parser [Expr]
+argList = genericParamList expression
+
+script :: Parser [Statement]
+script = (:) <$> statement <*> ((lookAhead eof *> return []) <|> script)
+
