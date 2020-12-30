@@ -1,6 +1,7 @@
 {-# OPTIONS -fno-warn-unused-do-bind #-}  -- don't warn on unused parse captures
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 
 module DataDeskParser where
 
@@ -123,15 +124,10 @@ binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expressio
 
 type Identifier = String
 
-type FlagsLiteral = [Identifier]
-type EnumLiteral = [Identifier]
-
 data Tag = Tag Identifier [Expr] deriving (Show, Eq)
+data Tagged a = Tagged [Tag] a deriving (Show, Eq)
 
-data Declaration = Declaration [Tag] Identifier Type deriving (Show, Eq)
-
-type StructLiteral = [Declaration]
-type UnionLiteral = [Declaration]
+data Declaration = Declaration Identifier Type deriving (Show, Eq)
 
 data Expr
   = Idntfr Identifier
@@ -141,6 +137,12 @@ data Expr
   | BinExp Expr BinOp Expr
   | UnrExp UnrOp Expr
   deriving (Show, Eq)
+
+type FlagsLiteral = [Tagged Identifier]
+type EnumLiteral = [Tagged Identifier]
+type StructLiteral = [Tagged Declaration]
+type UnionLiteral = [Tagged Declaration]
+type ProcLiteral = ([Tagged Declaration], Maybe Type)
 
 data Type
   = Pointer Type
@@ -156,8 +158,7 @@ data Statement
   | Flags Identifier FlagsLiteral
   | Enum Identifier EnumLiteral
   | Const Identifier Expr
-  | Proc Identifier [Declaration] (Maybe Type)
-  | Tagged [Tag] Statement
+  | Proc Identifier ProcLiteral
   deriving (Show, Eq)
 
 data BinOp
@@ -220,10 +221,10 @@ typeP = star
       array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
 
 declaration :: Parser Declaration
-declaration = Declaration <$> (many tag) <*> (identifier <* colon) <*> typeP
+declaration = Declaration <$> (identifier <* colon) <*> typeP
 
-declarationList :: Parser [Declaration]
-declarationList = betweenBraces (declaration `sepEndBy` semicolonOrComma)
+declarationList :: (Char, Char) -> Parser [Tagged Declaration]
+declarationList c = betweenChars c ((tagged declaration) `sepEndBy` semicolonOrComma)
 
 betweenBraces :: Parser a -> Parser a
 betweenBraces = betweenChars ('{', '}') 
@@ -232,20 +233,23 @@ keywordThen :: Identifier -> Parser a -> Parser a
 keywordThen k p = (try $ keyword k) *> p
 
 unionLiteral :: Parser StructLiteral
-unionLiteral = "union" `keywordThen` declarationList
+unionLiteral = "union" `keywordThen` declarationList ('{', '}')
 
 structLiteral :: Parser StructLiteral
-structLiteral = "struct" `keywordThen` declarationList
+structLiteral = "struct" `keywordThen` declarationList ('{', '}')
 
-statement :: Parser Statement
-statement = skipMany (try comment) *> ((Tagged <$> many1 tag) <|> return id) <*> simpleStatement
+tagged :: Parser a -> Parser (Tagged a)
+tagged p = Tagged <$> many tag <*> p
+
+statement :: Parser (Tagged Statement)
+statement = skipMany (try comment) *> tagged simpleStatement
 
 simpleStatement :: Parser Statement
 simpleStatement = (identified Union unionLiteral)
          <|> (identified Struct structLiteral)
          <|> (identified Flags flagsLiteral)
          <|> (identified Enum enumLiteral)
-         -- <|> (identified Proc (proc-stuff))
+         <|> (identified Proc procLiteral)
          <|> (identified Const expression)
 
 comment :: Parser ()
@@ -260,8 +264,8 @@ blockComment = void . lexeme $ (string "/*") *> manyTill anyChar (try $ string "
 identified :: (Identifier -> a -> Statement) -> Parser a -> Parser Statement
 identified f p = try (f <$> (identifier <* doubleColon) <*> p)
 
-identifierList :: Parser [Identifier]
-identifierList = betweenBraces (identifier `sepEndBy` semicolonOrComma)
+identifierList :: Parser [Tagged Identifier]
+identifierList = betweenBraces ((tagged identifier) `sepEndBy` semicolonOrComma)
 
 flagsLiteral :: Parser FlagsLiteral
 flagsLiteral = "flags" `keywordThen` identifierList
@@ -281,6 +285,13 @@ paramList = genericParamList identifier
 argList :: Parser [Expr]
 argList = genericParamList expression
 
-script :: Parser [Statement]
+script :: Parser [Tagged Statement]
 script = (:) <$> statement <*> ((lookAhead eof *> return []) <|> script)
+
+procLiteral :: Parser ProcLiteral 
+procLiteral =
+  (,)
+    <$> "proc" `keywordThen` declarationList ('(', ')')
+    <*> (optionMaybe $ "->" `keywordThen` typeP)
+  
 
