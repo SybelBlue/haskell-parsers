@@ -245,12 +245,13 @@ statement :: Parser (Tagged Statement)
 statement = skipMany (try comment) *> tagged simpleStatement
 
 simpleStatement :: Parser Statement
-simpleStatement = (identified Union unionLiteral)
-         <|> (identified Struct structLiteral)
-         <|> (identified Flags flagsLiteral)
-         <|> (identified Enum enumLiteral)
-         <|> (identified Proc procLiteral)
-         <|> (identified Const expression)
+simpleStatement
+  =   (identified Union unionLiteral)
+  <|> (identified Struct structLiteral)
+  <|> (identified Flags flagsLiteral)
+  <|> (identified Enum enumLiteral)
+  <|> (identified Proc procLiteral)
+  <|> (identified Const expression)
 
 comment :: Parser ()
 comment = (try lineComment) <|> (try blockComment)
