@@ -9,13 +9,15 @@ import Data.List (find)
 import Data.Tuple (fst, snd)
 import Data.Maybe (fromJust)
 
+import Data.Functor.Identity (Identity)
+
 import Control.Monad (void)
--- import Control.Applicative ((<|>), many)
 
 import Text.Parsec 
--- import Text.Parsec.Char 
 import Text.Parsec.Combinator (eof, sepEndBy)
 import Text.Parsec.String (Parser)
+
+import Text.Parsec.Expr 
 
 import System.Environment (getArgs)
 
@@ -92,35 +94,51 @@ escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
 charLiteral :: Parser Char
 charLiteral = betweenChars ('\'', '\'') innerChar
   where innerChar = notChar '\\' <|> escapedChar
+
 toUnrOp :: Char -> Maybe UnrOp
 toUnrOp c = findPair c unrOpPairs
 
 simpleExpression :: Parser Expr
-simpleExpression = (NumLit <$> numberLiteral)
-         <|> (StrLit <$> stringLiteral)
-         <|> (ChrLit <$> charLiteral)
-         <|> unaryExpression
-         <|> Idntfr <$> identifier
+simpleExpression
+  = betweenChars ('(', ')') expression
+  <|> (NumLit <$> numberLiteral)
+  <|> (StrLit <$> stringLiteral)
+  <|> (ChrLit <$> charLiteral)
+  <|> Idntfr <$> identifier
 
 expression :: Parser Expr
-expression = try binaryExpression <|> simpleExpression
-
-unaryExpression :: Parser Expr
-unaryExpression =
-  do
-    maybeOp <- lexeme $ toUnrOp <$> oneOf (fst <$> unrOpPairs)
-    op <- failNothing "expected unary operator" maybeOp
-    UnrExp op <$> expression
+expression = try nAryExpression <|> simpleExpression
 
 binaryOps :: Parser String
 binaryOps = lexeme $ choice (string . fst <$> binOpPairs)
 
--- TODO Use Text.Parsec.Expr to respect operator precedence
-binaryOperation :: Parser BinOp
-binaryOperation = toBinOp <$> binaryOps >>= failNothing "expected binary operator"
+unaryOps :: Parser Char
+unaryOps = lexeme $ choice (char . fst <$> unrOpPairs)
 
-binaryExpression :: Parser Expr
-binaryExpression = BinExp <$> simpleExpression <*> binaryOperation <*> expression
+binaryOperation :: String -> Parser BinOp
+binaryOperation op = (lexeme $ string op) *> (failNothing ("no such op " ++ op) $ toBinOp op)
+
+unaryOperation :: Char -> Parser UnrOp
+unaryOperation op = (lexeme $ char op) *> (failNothing ("no such op " ++ [op]) $ toUnrOp op)
+
+nAryExpression :: Parser Expr
+nAryExpression = buildExpressionParser table simpleExpression
+
+table :: [[Operator String () Identity Expr]]
+table = [ [ unary '~', unary '-']
+        , [ binary "&" AssocLeft, binary "|" AssocLeft ]
+        , [ binary "<<" AssocRight, binary ">>" AssocRight ]
+        , [ binary "*" AssocLeft, binary "/" AssocLeft, binary "%" AssocLeft ]
+        , [ binary "+" AssocLeft, binary "-" AssocLeft ]
+        -- ,[binary "<" AssocNone, binary ">" AssocNone]
+        , [ binary "=" AssocRight ]
+        , [ unary '!' ]
+        , [ binary "&&" AssocLeft ]
+        , [ binary "||" AssocLeft ]
+        ]
+  where
+    binary name assoc = Infix (BinExp <$> binaryOperation name) assoc
+    unary name = Prefix (UnrExp <$> unaryOperation name)
 
 type Identifier = String
 
@@ -134,7 +152,7 @@ data Expr
   | NumLit String
   | StrLit String
   | ChrLit Char
-  | BinExp Expr BinOp Expr
+  | BinExp BinOp Expr Expr
   | UnrExp UnrOp Expr
   deriving (Show, Eq)
 
@@ -294,5 +312,4 @@ procLiteral =
   (,)
     <$> "proc" `keywordThen` declarationList ('(', ')')
     <*> (optionMaybe $ "->" `keywordThen` typeP)
-  
 
