@@ -37,7 +37,7 @@ parseFile :: String -> IO ()
 parseFile path =
   do
     text <- readFile path
-    either print print $ parse script path text
+    either print (mapM_ print) $ parse script path text
 
 main :: IO ()
 main =
@@ -137,7 +137,7 @@ table = [ [ unary '~', unary '-']
         , [ binary "||" AssocLeft ]
         ]
   where
-    binary name assoc = Infix (BinExp <$> binaryOperation name) assoc
+    binary name assoc = Infix (flip BinExp <$> binaryOperation name) assoc
     unary name = Prefix (UnrExp <$> unaryOperation name)
 
 type Identifier = String
@@ -152,7 +152,7 @@ data Expr
   | NumLit String
   | StrLit String
   | ChrLit Char
-  | BinExp BinOp Expr Expr
+  | BinExp Expr BinOp Expr
   | UnrExp UnrOp Expr
   deriving (Show, Eq)
 
@@ -242,7 +242,7 @@ declaration :: Parser Declaration
 declaration = Declaration <$> (identifier <* colon) <*> typeP
 
 declarationList :: (Char, Char) -> Parser [Tagged Declaration]
-declarationList c = betweenChars c ((tagged declaration) `sepEndBy` semicolonOrComma)
+declarationList c = betweenChars c $ tagged declaration `sepEndBy` semicolonOrComma
 
 betweenBraces :: Parser a -> Parser a
 betweenBraces = betweenChars ('{', '}') 
@@ -312,4 +312,3 @@ procLiteral =
   (,)
     <$> "proc" `keywordThen` declarationList ('(', ')')
     <*> (optionMaybe $ "->" `keywordThen` typeP)
-
