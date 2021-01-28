@@ -7,7 +7,7 @@ import Data.Either (either)
 
 import qualified Data.Map.Strict as Map
 
-import Control.Monad ((>=>), void, unless)
+import Control.Monad ((>=>), void, unless, when, foldM)
 
 import Text.Printf (printf)
 
@@ -20,8 +20,7 @@ import Text.Parsec.String (Parser)
 type Identifier = String
 
 mapLeft :: (a -> c) -> Either a b -> Either c b
-mapLeft _ (Right x) = Right x
-mapLeft f (Left m)  = Left (f m)
+mapLeft f = either (Left . f) Right
 
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (spaces *> p <* eof) ""
@@ -58,6 +57,7 @@ data Expr
     | Lambda [Identifier] Expr
     | Invoke Identifier [Expr]
     | BinExp Expr String Expr
+    | Delete Identifier
     deriving (Show, Eq)
 
 simpleExpression :: Parser Expr
@@ -65,6 +65,7 @@ simpleExpression
     = betweenChars ('(', ')') expression
     <|> (NumLit <$> numberLiteral)
     <|> try assignment
+    <|> try deletion
     <|> (Invoke <$> identifier <*> many expression)
 
 expression :: Parser Expr
@@ -79,6 +80,9 @@ funcDefinition = Assign <$> ("fn" `keywordThen` identifier)
 
 assignment :: Parser Expr
 assignment = Assign <$> identifier <*> "=" `keywordThen` expression
+
+deletion :: Parser Expr
+deletion = Delete <$> "del" `keywordThen` identifier
 
 binaryExpression :: Parser Expr
 binaryExpression = buildExpressionParser table simpleExpression
@@ -102,11 +106,14 @@ type Envr = Map.Map Identifier Expr
 update :: Identifier -> Expr -> Envr -> Envr
 update = Map.insert
 
+delete :: Identifier -> Envr -> Envr
+delete = Map.delete
+
 fetch :: Identifier -> Envr -> GenEvalResult Expr
 fetch x = failNothing ("Unknown Variable: " ++ x) . Map.lookup x
 
-envr :: Envr
-envr = Map.empty
+blankEnvr :: Envr
+blankEnvr = Map.empty
 
 sub :: Identifier -> Expr -> Expr -> Expr
 sub var (BinExp a op b) rep = BinExp (sub var a rep) op (sub var b rep)
@@ -118,24 +125,31 @@ sub _ exp _ = exp
 
 type EvalError = String
 type GenEvalResult a = Either EvalError a
-type EvalResult = GenEvalResult (Envr, Float)
+type EvalResult = GenEvalResult (Envr, Maybe Float)
 
 failNothing :: EvalError -> Maybe a -> GenEvalResult a
 failNothing _ (Just x) = return x
 failNothing msg _ = Left msg
 
+coerce :: Maybe Float -> GenEvalResult Float
+coerce = failNothing "Non-numeric value"
+
 evalExpr :: Expr -> Envr -> EvalResult
-evalExpr (NumLit f) env = return (env, f)
+evalExpr (NumLit f) env = return (env, Just f)
 evalExpr (BinExp a opStr b) env = 
   do
-    (envA, resA) <- evalExpr a env
-    (envB, resB) <- evalExpr b envA
+    (envA, mResA) <- evalExpr a env
+    resA <- coerce mResA
+    (envB, mResB) <- evalExpr b envA
+    resB <- coerce mResB
     op <- failNothing ("Inalid Op " ++ opStr) (binOpFromString opStr)
-    return (envB, op resA resB)
+    return (envB, Just $ op resA resB)
+evalExpr (Assign name (Lambda n as)) env = return (update name (Lambda n as) env, Nothing)
 evalExpr (Assign name exp) env = 
   do
-    (newEnv, res) <- evalExpr exp env
-    return (update name (NumLit res) newEnv, res)
+    (newEnv, mRes) <- evalExpr exp env
+    res <- coerce mRes
+    return (update name (NumLit res) newEnv, Just res)
 evalExpr (Lambda [] body) env = evalExpr body env
 evalExpr (Lambda (a:as) body) env = 
   do
@@ -149,10 +163,49 @@ evalExpr (Invoke name params) env = fetch name env >>= \case
                     name 
                     (length args)
                     (length params))
-            let newEnv = foldr (uncurry update) env $ zip args params
+            (finalEnv, mEvaledParams) <- foldM paramEval (env, []) params
+            evaledParams <- foldM paramCoerce [] mEvaledParams
+            let newEnv = foldr (uncurry update) blankEnvr $ zip args evaledParams
             (_, res) <- evalExpr (Lambda [] body) newEnv
-            return (env, res)
+            return (finalEnv, res)
+          where 
+            paramEval :: (Envr, [Maybe Float]) -> Expr -> GenEvalResult (Envr, [Maybe Float])
+            paramEval (innerEnv, fs) exp = do
+              (newEnv, f) <- evalExpr exp innerEnv
+              return (newEnv, f:fs)
+            paramCoerce :: [Expr] -> Maybe Float -> GenEvalResult [Expr]
+            paramCoerce exs mf = (:exs) <$> NumLit <$> coerce mf
         exp -> evalExpr exp env
+evalExpr (Delete name) env = return (delete name env, Nothing)
 
-eval :: String -> Envr -> EvalResult
-eval s env = mapLeft show (parseWithEof statement s) >>= flip evalExpr env
+eval :: Envr -> String -> EvalResult
+eval env = mapLeft show . parseWithEof statement >=> flip evalExpr env
+
+evalAll :: [String] -> Envr -> GenEvalResult [Maybe Float]
+evalAll []     _   = return []
+evalAll (c:cs) env = 
+ do (envC, res) <- eval env c
+    (res :) <$> evalAll cs envC
+
+evalLines :: String -> GenEvalResult [Maybe Float]
+evalLines = flip evalAll blankEnvr . lines
+
+printResult :: (Envr -> IO ()) -> Envr -> EvalResult -> IO ()
+printResult f env (Left err) = putStrLn err >> f env
+printResult f _   (Right (env, Nothing)) = f env
+printResult f _   (Right (env, Just n)) = print n >> f env
+
+main :: IO ()
+main = mainLoop testEnvr
+  where 
+    mainLoop env = do 
+      line <- getLine
+      if line == "envr" 
+        then print env *> mainLoop env
+        else unless (line == "quit") $ printResult mainLoop env $ eval env line
+  
+testEnvr :: Envr
+testEnvr = Map.fromList 
+  [ ("iden", Lambda ["x"] $ Invoke "x" [])
+  , ("incr", Lambda ["x"] $ BinExp (Invoke "x" []) "+" (NumLit 1.0))
+  ]
