@@ -79,9 +79,7 @@ instance Alternative Parser where
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy p = item `bind` \c ->
-  if p c
-  then unit c
-  else (Parser $ const [])
+  if p c then return c else Parser (const [])
 
 oneOf :: [Char] -> Parser Char
 oneOf = satisfy . flip elem
@@ -171,10 +169,7 @@ eval = \case
   Lit n   -> n
 
 int :: Parser Expr
-int =
-  do
-    n <- number
-    return (Lit n)
+int = Lit <$> number
 
 expr :: Parser Expr
 expr = term `chainl1` addop
@@ -189,7 +184,7 @@ infixOp :: String -> (a -> a -> a) -> Parser (a -> a -> a)
 infixOp x f = reserved x >> return f
 
 addop :: Parser (Expr -> Expr -> Expr)
-addop = (infixOp "+" Add) <|> (infixOp "-" Sub)
+addop = infixOp "+" Add <|> infixOp "-" Sub
 
 mulop :: Parser (Expr -> Expr -> Expr)
 mulop = infixOp "*" Mul
