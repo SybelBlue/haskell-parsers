@@ -3,9 +3,9 @@
 
 module NanoParser where
 
-import Data.Char
-import Control.Monad
-import Control.Applicative
+import Data.Char ( isDigit )
+import Control.Monad ( MonadPlus(..), forever )
+import Control.Applicative ( Alternative(..) )
 
 newtype Parser a = Parser { parse :: String -> [(a, String)] }
 
