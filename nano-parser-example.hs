@@ -9,7 +9,6 @@ import Control.Applicative ( Alternative(..) )
 
 newtype Parser a = Parser { parse :: String -> [(a, String)] }
 
-
 runParser :: Parser a -> String -> a
 runParser m s =
   case parse m s of
@@ -79,7 +78,7 @@ instance Alternative Parser where
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy p = item `bind` \c ->
-  if p c then return c else Parser (const [])
+  if p c then return c else failure
 
 oneOf :: [Char] -> Parser Char
 oneOf = satisfy . flip elem
