@@ -42,15 +42,19 @@ tokenize xxs@(c:cs)
 compile :: String -> [String]
 compile = pass3 . pass2 . pass1
 
-splitAtFirst :: (a -> Bool) -> [a] -> ([a], [a])
-splitAtFirst p = either (,[]) id . foldl folder (Left []) 
-  where folder (Left xs) x = if p x then Right (xs, []) else Left (x:xs)
-        folder (Right (xs, ys)) y = Right (xs, y:ys)
 pass1 :: String -> AST
 pass1 = coerceParse function . tokenize
 
 pass2 :: AST -> AST
-pass2 = undefined
+pass2 (Add a b) = immMap (+) Add (pass2 a) (pass2 b)
+pass2 (Sub a b) = immMap (-) Sub (pass2 a) (pass2 b)
+pass2 (Mul a b) = immMap (*) Mul (pass2 a) (pass2 b)
+pass2 (Div a b) = immMap div Div (pass2 a) (pass2 b)
+pass2 x = x
+
+immMap :: (Int -> Int -> Int) -> (AST -> AST -> AST) -> (AST -> AST -> AST)
+immMap f _ (Imm x) (Imm y) = Imm (f x y)
+immMap _ g a b = g a b
 
 pass3 :: AST -> [String]
 pass3 = undefined
@@ -132,4 +136,4 @@ term args = mul <|> div <|> factor args
 factor :: [String] -> Parser Token AST
 factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
 
-main = print $ pass1 "[ a b ] a*a + b*b"
+main = print $ (pass2 . pass1) "[ a b ] a*a + b*b"
