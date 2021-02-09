@@ -1,11 +1,12 @@
-{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE TupleSections #-}
+
 module TinyThreePassCompiler where
 
 import Data.List
 import Data.Bifunctor
 import Control.Monad
 import Control.Applicative
+import Data.Functor
 
 data AST = Imm Int
          | Arg Int
@@ -19,8 +20,6 @@ data Token = TChar Char
            | TInt Int
            | TStr String
            deriving (Eq, Show)
-
-newtype Parser a b = Parser { parse :: [a] -> Either String (b, [a]) }
 
 alpha, digit :: String
 alpha = ['a'..'z'] ++ ['A'..'Z']
@@ -41,7 +40,7 @@ compile :: String -> [String]
 compile = pass3 . pass2 . pass1
 
 pass1 :: String -> AST
-pass1 = coerceParse function . tokenize
+pass1 = (\(Just (ast, _)) -> ast) . parse function . tokenize
 
 pass2 :: AST -> AST
 pass2 (Add a b) = immMap (+) Add (pass2 a) (pass2 b)
@@ -70,81 +69,6 @@ pushDown combInst x y = if oneInst x && oneInst y
         oneInst (Arg _) = True
         oneInst _       = False
 
-coerceParse :: Parser a b -> [a] -> b
-coerceParse p = (\(Right (b, _)) -> b) . parse p
-
-instance Functor (Parser a) where
-    fmap fb p = Parser $ second (first fb) . parse p
-
-instance Applicative (Parser a) where
-  pure b = Parser $ Right . (b,)
-  pfa <*> pa = Parser $ \l -> do
-    (fa, l0) <- parse pfa l
-    ( a, l1) <- parse pa  l0
-    Right (fa a, l1)
-
-instance Monad (Parser a) where
-    return = pure
-    (>>=) :: Parser a b -> (b -> Parser a c) -> Parser a c
-    pb >>= fpc = Parser $ parse pb >=> \(res, rest) -> parse (fpc res) rest
-
-instance MonadFail (Parser a) where
-  fail s = Parser (const $ Left s)
-
-instance Alternative (Parser a) where
-  empty = fail "empty"
-  pa <|> pb = Parser $ \l ->
-    case parse pa l of
-      Left e0 -> 
-        case parse pb l of
-          Left e1 -> Left (e0 ++ " and " ++ e1)
-          x -> x
-      x -> x
-
-parser :: (a -> Either String b) -> Parser a b
-parser f = Parser inner
-  where inner (x:xs) = second (, xs) (f x)
-        inner [] = Left "empty stream"
-
-number :: Parser Token AST
-number = parser num
-  where num (TInt x) = Right (Imm x)
-        num _        = Left "not a number"
-
-identifier :: Parser Token String
-identifier = parser ident
-  where ident (TStr s) = Right s
-        ident _        = Left "not an identifier"
-
-variable :: [String] -> Parser Token AST
-variable vars = do
-  name <- identifier
-  maybe (fail $ "unkown symbol " ++ name) (return . Arg) (name `elemIndex` vars)
-
-char :: Char -> Parser Token Char
-char c = parser chr
-  where chr (TChar x) | x == c = Right c
-        chr _                  = Left $ "token is not '" ++ c:"'"
-
-betweenChars :: (Char, Char) -> Parser Token b -> Parser Token b
-betweenChars (a, b) p = char a *> p <* char b
-
-function :: Parser Token AST
-function = expression =<< betweenChars ('[', ']') (many identifier)
-
-expression :: [String] -> Parser Token AST
-expression args = add <|> sub <|> term args
-  where add = Add <$> term args <* char '+' <*> term args
-        sub = Sub <$> term args <* char '-' <*> term args
-
-term :: [String] -> Parser Token AST
-term args = mul <|> div <|> factor args
-  where mul = Mul <$> factor args <* char '*' <*> term args
-        div = Div <$> factor args <* char '/' <*> term args
-
-factor :: [String] -> Parser Token AST
-factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
-
 simulate :: [String] -> [Int] -> Int
 simulate asm argv = takeR0 $ foldl' step (0, 0, []) asm where
   step (r0,r1,stack) ins =
@@ -160,4 +84,75 @@ simulate asm argv = takeR0 $ foldl' step (0, 0, []) asm where
       "DI" -> (r0 `div` r1, r1, stack)
   takeR0 (r0,_,_) = r0
 
+detokenize [] = ""
+detokenize (x:xs) = (++ detokenize xs) . (++ " ") $ case x of
+  TChar c -> [c]
+  TStr s -> s
+  TInt n -> show n
+
 main = simulate (compile "[ a b ] a*a + b*b") [2, 3]
+
+function = expression =<< betweenChars ('[', ']') (many identifier)
+
+expression args = addSub args <|> term args
+
+addSub args = do
+  left <- term args
+  op <- (char '+' $> Add) <|> (char '-' $> Sub)
+  op left <$> expression args
+
+term args = mulDiv args <|> factor args
+
+mulDiv args = do
+  left <- factor args
+  op <- (char '*' $> Mul) <|> (char '/' $> Div)
+  op left <$> term args
+
+identifier = parser iden
+  where iden (TStr name) = Just name
+        iden _ = Nothing
+
+factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
+
+number = parser num
+  where num (TInt n) = Just (Imm n)
+        num _ = Nothing
+
+variable args = parser var
+  where var (TStr s) = Arg <$> s `elemIndex` args
+        var _ = Nothing
+
+char c = parser chr
+  where chr (TChar x) | x == c = Just x
+        chr _ = Nothing
+
+betweenChars (a, b) p = char a *> p <* char b
+
+
+parser :: (Token -> Maybe a) -> Parser a
+parser f = Parser inner
+  where inner [] = Nothing
+        inner (x:xs) = (, xs) <$> f x
+
+newtype Parser a = Parser { parse :: [Token] -> Maybe (a, [Token]) }
+
+instance Functor Parser where
+    fmap fb p = Parser $ fmap (first fb) . parse p
+
+instance Applicative Parser where
+  pure b = Parser $ Just . (b,)
+  pfa <*> pa = Parser $ \l -> do
+    (fa, l0) <- parse pfa l
+    ( a, l1) <- parse pa  l0
+    Just (fa a, l1)
+
+instance Monad Parser where
+    return = pure
+    pb >>= fpc = Parser $ parse pb >=> \(res, rest) -> parse (fpc res) rest
+
+instance MonadFail Parser where
+  fail s = Parser (const Nothing)
+
+instance Alternative Parser where
+  empty = fail "empty"
+  pa <|> pb = Parser $ \l -> parse pa l <|> parse pb l
