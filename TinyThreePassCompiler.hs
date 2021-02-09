@@ -1,9 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 module TinyThreePassCompiler where
-
-import Debug.Trace
 
 import Data.List
 import Data.Bifunctor
@@ -148,4 +145,19 @@ term args = mul <|> div <|> factor args
 factor :: [String] -> Parser Token AST
 factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
 
-main = print $ (pass2 . pass1) "[ a b ] a*a + b*b"
+simulate :: [String] -> [Int] -> Int
+simulate asm argv = takeR0 $ foldl' step (0, 0, []) asm where
+  step (r0,r1,stack) ins =
+    case ins of
+      ('I':'M':xs) -> (read xs, r1, stack)
+      ('A':'R':xs) -> (argv !! n, r1, stack) where n = read xs
+      "SW" -> (r1, r0, stack)
+      "PU" -> (r0, r1, r0:stack)
+      "PO" -> (head stack, r1, tail stack)
+      "AD" -> (r0 + r1, r1, stack)
+      "SU" -> (r0 - r1, r1, stack)
+      "MU" -> (r0 * r1, r1, stack)
+      "DI" -> (r0 `div` r1, r1, stack)
+  takeR0 (r0,_,_) = r0
+
+main = simulate (compile "[ a b ] a*a + b*b") [2, 3]
