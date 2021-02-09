@@ -84,6 +84,8 @@ betweenChars (a, b) p = char a *> p <* char b
 function :: Parser Token AST
 function = expression =<< betweenChars ('[', ']') (many identifier)
 
+
+----------------- WARNING, DOES NOT PEMDAS CORRECTLY --------------
 expression :: [String] -> Parser Token AST
 expression args = add <|> sub <|> term args
   where add = Add <$> term args <* char '+' <*> term args
@@ -93,6 +95,7 @@ term :: [String] -> Parser Token AST
 term args = mul <|> div <|> factor args
   where mul = Mul <$> factor args <* char '*' <*> term args
         div = Div <$> factor args <* char '/' <*> term args
+---------------------------------------------------------------------
 
 factor :: [String] -> Parser Token AST
 factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
