@@ -14,6 +14,7 @@ data AST = Imm Int
          | Sub AST AST
          | Mul AST AST
          | Div AST AST
+         | Parens AST
          deriving (Eq, Show)
 
 data Token = TChar Char
@@ -69,50 +70,44 @@ pushDown combInst x y = if oneInst x && oneInst y
         oneInst (Arg _) = True
         oneInst _       = False
 
-simulate :: [String] -> [Int] -> Int
-simulate asm argv = takeR0 $ foldl' step (0, 0, []) asm where
-  step (r0,r1,stack) ins =
-    case ins of
-      ('I':'M':xs) -> (read xs, r1, stack)
-      ('A':'R':xs) -> (argv !! n, r1, stack) where n = read xs
-      "SW" -> (r1, r0, stack)
-      "PU" -> (r0, r1, r0:stack)
-      "PO" -> (head stack, r1, tail stack)
-      "AD" -> (r0 + r1, r1, stack)
-      "SU" -> (r0 - r1, r1, stack)
-      "MU" -> (r0 * r1, r1, stack)
-      "DI" -> (r0 `div` r1, r1, stack)
-  takeR0 (r0,_,_) = r0
+function = fmap cleanParens $ expr =<< betweenChars ('[', ']') (many identifier)
 
-detokenize [] = ""
-detokenize (x:xs) = (++ detokenize xs) . (++ " ") $ case x of
-  TChar c -> [c]
-  TStr s -> s
-  TInt n -> show n
+cleanParens (Parens x) = cleanParens x
+cleanParens (Add x y) = Add (cleanParens x) (cleanParens y)
+cleanParens (Sub x y) = Sub (cleanParens x) (cleanParens y)
+cleanParens (Mul x y) = Mul (cleanParens x) (cleanParens y)
+cleanParens (Div x y) = Div (cleanParens x) (cleanParens y)
+cleanParens x = x
 
-main = simulate (compile "[ a b ] a*a + b*b") [2, 3]
-
-function = expression =<< betweenChars ('[', ']') (many identifier)
-
-expression args = addSub args <|> term args
+expr args = addSub args <|> term args
 
 addSub args = do
   left <- term args
   op <- (char '+' $> Add) <|> (char '-' $> Sub)
-  op left <$> expression args
+  right <- expr args
+  return $ rebind (op left right)
 
 term args = mulDiv args <|> factor args
 
 mulDiv args = do
   left <- factor args
   op <- (char '*' $> Mul) <|> (char '/' $> Div)
-  op left <$> term args
+  right <- term args
+  return $ rebind (op left right)
+
+rebind (Div l (Mul a b)) = Mul (rebind (Div l a)) b
+rebind (Div l (Sub a b)) = Sub (rebind (Div l a)) b
+rebind (Div l (Add a b)) = Add (rebind (Div l a)) b
+rebind (Mul l (Sub a b)) = Sub (rebind (Mul l a)) b
+rebind (Mul l (Add a b)) = Add (rebind (Mul l a)) b
+rebind (Sub l (Add a b)) = Add (rebind (Sub l a)) b
+rebind x = x
 
 identifier = parser iden
   where iden (TStr name) = Just name
         iden _ = Nothing
 
-factor args = number <|> variable args <|> betweenChars ('(', ')') (expression args)
+factor args = number <|> variable args <|> betweenChars ('(', ')') (Parens <$> expr args)
 
 number = parser num
   where num (TInt n) = Just (Imm n)
@@ -156,3 +151,33 @@ instance MonadFail Parser where
 instance Alternative Parser where
   empty = fail "empty"
   pa <|> pb = Parser $ \l -> parse pa l <|> parse pb l
+
+
+
+
+simulate :: [String] -> [Int] -> Int
+simulate asm argv = takeR0 $ foldl' step (0, 0, []) asm where
+  step (r0,r1,stack) ins =
+    case ins of
+      ('I':'M':xs) -> (read xs, r1, stack)
+      ('A':'R':xs) -> (argv !! n, r1, stack) where n = read xs
+      "SW" -> (r1, r0, stack)
+      "PU" -> (r0, r1, r0:stack)
+      "PO" -> (head stack, r1, tail stack)
+      "AD" -> (r0 + r1, r1, stack)
+      "SU" -> (r0 - r1, r1, stack)
+      "MU" -> (r0 * r1, r1, stack)
+      "DI" -> (r0 `div` r1, r1, stack)
+  takeR0 (r0,_,_) = r0
+
+detokenize [] = ""
+detokenize (x:xs) = (++ detokenize xs) . (++ " ") $ case x of
+  TChar c -> [c]
+  TStr s -> s
+  TInt n -> show n
+
+angryString = "[ x y z ] ( 2 * 3 * x + 5 * y - 3 * z ) / ( 1 + 3 + 2 * 2 )"
+expectedPass1 = Div (Sub (Add (Mul (Mul (Imm 2) (Imm 3)) (Arg 0)) (Mul (Imm 5) (Arg 1))) (Mul (Imm 3) (Arg 2))) (Add (Add (Imm 1) (Imm 3)) (Mul (Imm 2) (Imm 2)))
+
+
+main = simulate (compile "[ a b ] a*a + b*b") [2, 3]
