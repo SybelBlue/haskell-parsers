@@ -22,7 +22,8 @@ data Token = TChar Char
            | TInt Int
            | TStr String
            deriving (Eq, Show)
-  
+
+newtype Parser a b = Parser { parse :: [a] -> Either String (b, [a]) }
 
 alpha, digit :: String
 alpha = ['a'..'z'] ++ ['A'..'Z']
@@ -57,9 +58,20 @@ immMap f _ (Imm x) (Imm y) = Imm (f x y)
 immMap _ g a b = g a b
 
 pass3 :: AST -> [String]
-pass3 = undefined
+pass3 (Add x y) = pushDown "AD" x y
+pass3 (Sub x y) = pushDown "SU" x y
+pass3 (Mul x y) = pushDown "MU" x y
+pass3 (Div x y) = pushDown "DI" x y
+pass3 (Imm num) = ["IM " ++ show num]
+pass3 (Arg num) = ["AR " ++ show num]
 
-newtype Parser a b = Parser { parse :: [a] -> Either String (b, [a]) }
+pushDown :: String -> AST -> AST -> [String]
+pushDown combInst x y = if oneInst x && oneInst y 
+  then pass3 y ++ "SW" : pass3 x ++ [combInst]
+  else pass3 x ++ "PU" : pass3 y ++ ["SW", "PO", combInst]
+  where oneInst (Imm _) = True
+        oneInst (Arg _) = True
+        oneInst _       = False
 
 coerceParse :: Parser a b -> [a] -> b
 coerceParse p = (\(Right (b, _)) -> b) . parse p
