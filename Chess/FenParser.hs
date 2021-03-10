@@ -3,6 +3,8 @@
 
 module Chess.FenParser (Fen(..), fen) where
 
+import Chess.Data (Square, Color)
+
 import Control.Monad
 
 import Data.Functor
@@ -12,11 +14,11 @@ import Text.Parsec.String
 
 data Fen = Fen
     { board :: [[Either Int Char]]
-    , toMove :: Char
+    , toMove :: Color
     , castlingCodes :: [Char]
-    , enPassant :: Maybe (Char, Char)
-    , halfmove :: Int
-    , turn :: Int
+    , enPassantSq :: Maybe Square
+    , halfmoveClock :: Int
+    , turnClock :: Int
     } deriving (Show, Eq)
 
 rank :: Parser [Either Int Char]
@@ -30,15 +32,15 @@ fen = do
     many (oneOf " \t\n")
     board <- (++) <$> count 7 (rank <* char '/') <*> (pure <$> rank)
     spaceBreak
-    toMove <- oneOf "wb"
+    toMove <- (=='w') <$> oneOf "wb"
     spaceBreak
     castlingCodes <- dashable (many (oneOf "KQkq"))
     spaceBreak
-    enPassant <- dashable (Just <$> ((,) <$> oneOf ['a'..'h'] <*> digit))
+    enPassantSq <- dashable (Just <$> ((,) <$> oneOf ['a'..'h'] <*> digit))
     spaceBreak
-    halfmove <- read <$> many1 digit
+    halfmoveClock <- read <$> many1 digit
     spaceBreak
-    turn <- read <$> many1 digit
+    turnClock <- read <$> many1 digit
     many (oneOf " \t\n")
-    return $ Fen { board, toMove, castlingCodes, enPassant, halfmove, turn }
+    return $ Fen { board, toMove, castlingCodes, enPassantSq, halfmoveClock, turnClock }
 

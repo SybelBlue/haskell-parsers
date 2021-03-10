@@ -8,6 +8,7 @@ import Text.Parsec
 import Text.Parsec.String 
 
 import System.Exit (exitFailure)
+import Data.Either (fromRight)
 
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (p <* eof) ""
@@ -19,8 +20,7 @@ parseF p fileName = parseFromFile p fileName >>= either report return
         putStrLn $ "Error: " ++ show err
         exitFailure
 
-main = putStrLn $
-    let fenStr = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        prs = parseWithEof fen fenStr in
-        either show (displayBoard . fromFen) prs
+startingBoard = fromFen . fromRight undefined $ parseWithEof fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+main = putStrLn $ displayBoard startingBoard
 
