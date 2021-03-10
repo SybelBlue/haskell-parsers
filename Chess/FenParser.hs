@@ -28,7 +28,7 @@ dashable p = (char '-' $> mzero) <|> p
 
 fen = do
     many (oneOf " \t\n")
-    board <- rank `sepBy` char '/'
+    board <- (++) <$> count 7 (rank <* char '/') <*> (pure <$> rank)
     spaceBreak
     toMove <- oneOf "wb"
     spaceBreak
