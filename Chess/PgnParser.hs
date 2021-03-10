@@ -1,8 +1,9 @@
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Chess.PgnParser where
+module Chess.PgnParser (pgn) where
+
+import Chess.Data
 
 import Control.Monad
 
@@ -12,35 +13,6 @@ import Data.Maybe
 import Text.Parsec
 import Text.Parsec.String
 import Data.Bifunctor
-
-data CheckState = None | Check | Mate deriving (Show, Eq)
-
-type Square = (Char, Char)
-
-data Move
-    = Move 
-      { turn :: Maybe Int
-      , piece :: Char
-      , rankSpec :: Maybe Char
-      , fileSpec :: Maybe Char
-      , captures :: Bool
-      , destination :: Square
-      , check :: CheckState
-      }
-    | Push
-      { turn :: Maybe Int
-      , fileSpec :: Maybe Char
-      , captures :: Bool
-      , destination :: Square
-      , promotion :: Maybe Char
-      , check :: CheckState
-      }
-    | Castles
-      { turn :: Maybe Int
-      , long :: Bool
-      , check :: CheckState
-      }
-    deriving (Show, Eq)
 
 tag :: Parser () 
 tag = lexeme . void $ between (char '[') (char ']') (many $ noneOf "]")
