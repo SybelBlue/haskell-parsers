@@ -74,13 +74,13 @@ Result:
 tag :: Parser () 
 tag = lexeme . void $ between (char '[') (char ']') (many $ noneOf "]")
 
-pgn = many tag *> sepEndBy (move <* optional comment) (many1 $ char ' ') <* (eof <|> void result)
+pgn = many tag *> sepEndBy (move <* optional comment) (many1 $ oneOf " \n\t") <* (eof <|> void result)
 
 comment :: Parser ()
 comment = lexeme (void (char ';' *> manyTill anyChar (void newline <|> eof)) <|> void (char '{' *> manyTill anyChar (char '}')))
 
 move :: Parser Move
-move = lexeme (try castles <|> try pawn <|> stdMove)
+move = try castles <|> try pawn <|> stdMove
 
 result :: Parser String
 result = choice $ string <$> ["1/2-1/2", "1-0", "0-1"]
