@@ -3,7 +3,7 @@ module Chess.Main where
 
 import Data.Maybe
 
-import Text.Parsec ( ParseError, parse )
+import Text.Parsec ( ParseError, parse, eof )
 import Text.Parsec.String ( Parser )
 
 import Chess.PgnParser 
@@ -16,7 +16,7 @@ type Piece = Char
 type Color = Bool
 
 parseWithEof :: Parser a -> String -> Either ParseError a
-parseWithEof p = parse p ""
+parseWithEof p = parse (p <* eof) ""
 
 isPiece :: Char -> Bool
 isPiece c = toLower c `elem` "bpknqr" && isAscii c
