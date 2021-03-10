@@ -6,6 +6,7 @@ import Data.Maybe
 import Text.Parsec ( ParseError, parse )
 import Text.Parsec.String ( Parser )
 
+import Chess.PgnParser 
 import Chess.FenParser 
 
 import Data.Char ( toLower, isAscii, isAsciiUpper )
