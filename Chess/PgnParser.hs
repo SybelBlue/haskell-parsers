@@ -27,7 +27,7 @@ data Move
       , destination :: Square
       , check :: CheckState
       }
-    | Pawn
+    | Push
       { turn :: Maybe Int
       , fileSpec :: Maybe Char
       , captures :: Bool
@@ -129,7 +129,7 @@ pawn = do
     let fileSpec = file0 <$ mDestFile
     promotion <- promotion'
     check <- checkState
-    return $ Pawn { turn, fileSpec, captures, destination, promotion, check }
+    return $ Push { turn, fileSpec, captures, destination, promotion, check }
 
 castles = do
     turn <- turn'
