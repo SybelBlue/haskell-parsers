@@ -42,7 +42,7 @@ data Move
       }
     deriving (Show, Eq)
 
-{-
+{- SPEC
 Tags:
     [ ... ]
 Move:
@@ -70,6 +70,7 @@ Comment:
 Result:
    1/2-1/2 | 1-0 | 0-1
 -}
+
 tag :: Parser () 
 tag = lexeme . void $ between (char '[') (char ']') (many $ noneOf "]")
 
