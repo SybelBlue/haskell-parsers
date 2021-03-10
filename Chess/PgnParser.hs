@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 
@@ -12,7 +13,7 @@ import Text.Parsec
 import Text.Parsec.String
 import Data.Bifunctor
 
-data CheckState = None | Check | Mate
+data CheckState = None | Check | Mate deriving (Show, Eq)
 
 type Square = (Char, Char)
 
@@ -24,6 +25,13 @@ data Move
       , fileSpec :: Maybe Char
       , captures :: Bool
       , destination :: Square
+      , check :: CheckState
+      }
+    | Pawn
+      { turn :: Maybe Int
+      , fileSpec :: Maybe Char
+      , captures :: Bool
+      , destination :: Square
       , promotion :: Maybe Char
       , check :: CheckState
       }
@@ -32,22 +40,29 @@ data Move
       , long :: Bool
       , check :: CheckState
       }
+    deriving (Show, Eq)
 
 {-
 Tags:
     [ ... ]
 Move:
   std:
-    turn ?
     piece
     square_spec | rank_spec | file_spec ?
     captures ?
     destination
-    promotion ?
     check | mate ?
   castles:
-    turn ?
     O-O(-O)?
+    check | mate ?
+  pawn:
+    file_spec
+    (
+        captures
+        dest_file
+    )?
+    rank_spec
+    promotion ?
     check | mate ?
 Comment:
     ; ... \n
@@ -55,15 +70,19 @@ Comment:
 Result:
    1/2-1/2 | 1-0 | 0-1
 -}
-
 tag :: Parser () 
-tag = void $ between (char '[') (char ']') (many $ noneOf "]")
+tag = lexeme . void $ between (char '[') (char ']') (many $ noneOf "]")
+
+pgn = many tag *> sepEndBy (move <* optional comment) (many1 $ char ' ') <* (eof <|> void result)
 
 comment :: Parser ()
 comment = lexeme (void (char ';' *> manyTill anyChar (void newline <|> eof)) <|> void (char '{' *> manyTill anyChar (char '}')))
 
 move :: Parser Move
-move = lexeme (try castles <|> stdMove)
+move = lexeme (try castles <|> try pawn <|> stdMove)
+
+result :: Parser String
+result = choice $ string <$> ["1/2-1/2", "1-0", "0-1"]
 
 lexeme p = p <* many (oneOf " \n\t")
 
@@ -74,11 +93,13 @@ square = (,) <$> file <*> rank
 
 turn' = optionMaybe (read <$> many1 digit <* char '.' <* many (char ' '))
 
-piece' = oneOf "rnbkqpRNBKQP"
+piece' = oneOf "rnbkqRNBKQ"
 
 checkState = (char '+' $> Check) <|> (char '#' $> Mate) <|> return None
 
 promotion' = optionMaybe (char '=' *> oneOf "rnbkqRNBKQ")
+
+captures' = optionBool (char 'x')
 
 optionBool p = (p $> True) <|> return False
 
@@ -90,15 +111,25 @@ stdMove = do
     if captures || isNothing rankSpec || isNothing fileSpec
         then do
             destination <- square
-            promotion <- promotion'
             check <- checkState
-            return $ Move { turn, piece, rankSpec, fileSpec, captures, destination, promotion, check }
+            return $ Move { turn, piece, rankSpec, fileSpec, captures, destination, check }
         else do
             let destination = bimap fromJust fromJust (rankSpec, fileSpec)
             let (rankSpec, fileSpec) = (Nothing, Nothing)
-            promotion <- promotion'
             check <- checkState
-            return $ Move { turn, piece, rankSpec, fileSpec, captures, destination, promotion, check }
+            return $ Move { turn, piece, rankSpec, fileSpec, captures, destination, check }
+
+pawn = do
+    turn <- turn'
+    file0 <- file
+    captures <- captures'
+    mDestFile <- if captures then Just <$> file else return Nothing
+    rankSpec <- rank
+    let destination = (fromMaybe file0 mDestFile, rankSpec)
+    let fileSpec = file0 <$ mDestFile
+    promotion <- promotion'
+    check <- checkState
+    return $ Pawn { turn, fileSpec, captures, destination, promotion, check }
 
 castles = do
     turn <- turn'

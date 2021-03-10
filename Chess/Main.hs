@@ -3,13 +3,14 @@ module Chess.Main where
 
 import Data.Maybe
 
-import Text.Parsec ( ParseError, parse, eof )
-import Text.Parsec.String ( Parser )
+import Text.Parsec ( ParseError, parse, eof, char )
+import Text.Parsec.String ( parseFromFile, Parser )
 
 import Chess.PgnParser 
 import Chess.FenParser 
 
 import Data.Char ( toLower, isAscii, isAsciiUpper )
+import System.Exit (exitFailure)
 
 type Piece = Char 
 
@@ -17,6 +18,13 @@ type Color = Bool
 
 parseWithEof :: Parser a -> String -> Either ParseError a
 parseWithEof p = parse (p <* eof) ""
+
+parseF :: Parser a -> String -> IO a
+parseF p fileName = parseFromFile p fileName >>= either report return
+  where
+    report err = do
+        putStrLn $ "Error: " ++ show err
+        exitFailure
 
 isPiece :: Char -> Bool
 isPiece c = toLower c `elem` "bpknqr" && isAscii c
