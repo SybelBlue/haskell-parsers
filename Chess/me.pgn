@@ -1,0 +1,44 @@
+[Event "<1500 Blitz Arena"]
+[Site "https://lichess.org/twgPZnyk"]
+[Date "2019.12.27"]
+[White "IvKZ"]
+[Black "SybelBlue"]
+[Result "0-1"]
+[UTCDate "2019.12.27"]
+[UTCTime "18:38:42"]
+[WhiteElo "1470"]
+[BlackElo "1427"]
+[WhiteRatingDiff "-7"]
+[BlackRatingDiff "+7"]
+[Variant "Standard"]
+[TimeControl "300+0"]
+[ECO "B00"]
+[Opening "Pirc Defense"]
+[Termination "Normal"]
+[Annotator "lichess.org"]
+
+
+1. e4 d6 { B00 Pirc Defense } 
+2. Bc4 e6 
+3. Nf3 d5 
+4. exd5 exd5 
+5. Bb5+ c6 
+6. Bd3 Nf6 
+7. O-O Be6 
+8. h3 g6 
+9. Re1 Bg7 
+10. c3 O-O 
+11. Na3 c5 
+12. c4 d4 
+13. Ng5 Nc6 
+14. Nxe6 fxe6 
+15. Rxe6 Nb4 
+16. Qe2 Re8 
+17. Nb5 Nxd3 
+18. Rxe8+ Qxe8 
+19. Qxd3 Qe1+ 
+20. Kh2 Ne4 
+21. Qf3 Be5+ 
+22. g3 Rf8 
+23. Qg2 Rxf2 
+24. d3 Bxg3# { Black wins by checkmate. } 0-1

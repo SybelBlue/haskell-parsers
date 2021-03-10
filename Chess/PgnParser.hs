@@ -42,45 +42,20 @@ data Move
       }
     deriving (Show, Eq)
 
-{- SPEC
-Tags:
-    [ ... ]
-Move:
-  std:
-    piece
-    square_spec | rank_spec | file_spec ?
-    captures ?
-    destination
-    check | mate ?
-  castles:
-    O-O(-O)?
-    check | mate ?
-  pawn:
-    file_spec
-    (
-        captures
-        dest_file
-    )?
-    rank_spec
-    promotion ?
-    check | mate ?
-Comment:
-    ; ... \n
-    { ... }
-Result:
-   1/2-1/2 | 1-0 | 0-1
--}
-
 tag :: Parser () 
 tag = lexeme . void $ between (char '[') (char ']') (many $ noneOf "]")
 
-pgn = many tag *> sepEndBy (move <* optional comment) (many1 $ oneOf " \n\t") <* (eof <|> void result)
+pgn = many tag *> pgnBody
+
+pgnBody = (comment *> pgnBody) 
+      <|> ((eof <|> void (try result)) $> []) 
+      <|> ((:) <$> move <*> pgnBody)
 
 comment :: Parser ()
 comment = lexeme (void (char ';' *> manyTill anyChar (void newline <|> eof)) <|> void (char '{' *> manyTill anyChar (char '}')))
 
 move :: Parser Move
-move = try castles <|> try pawn <|> stdMove
+move = lexeme (try castles <|> try pawn <|> stdMove)
 
 result :: Parser String
 result = choice $ string <$> ["1/2-1/2", "1-0", "0-1"]
@@ -98,7 +73,7 @@ piece' = oneOf "rnbkqRNBKQ"
 
 checkState = (char '+' $> Check) <|> (char '#' $> Mate) <|> return None
 
-promotion' = optionMaybe (char '=' *> oneOf "rnbkqRNBKQ")
+promotion' = optionMaybe (char '=' *> piece')
 
 captures' = optionBool (char 'x')
 
@@ -107,8 +82,8 @@ optionBool p = (p $> True) <|> return False
 stdMove = do
     turn <- turn'
     piece <- piece'
-    (rankSpec, fileSpec) <- (,) <$> optionMaybe rank <*> optionMaybe file
-    captures <- optionBool (char 'x')
+    (rankSpec, fileSpec) <- (,) <$> optionMaybe file <*> optionMaybe rank
+    captures <- captures'
     if captures || isNothing rankSpec || isNothing fileSpec
         then do
             destination <- square
@@ -138,4 +113,35 @@ castles = do
     long <- optionBool (string "-O")
     check <- checkState
     return $ Castles { turn, long, check }
-    
+
+
+
+{- SPEC
+Tags:
+    [ ... ]
+Move:
+  std:
+    piece
+    square_spec | rank_spec | file_spec ?
+    captures ?
+    destination
+    check | mate ?
+  castles:
+    O-O(-O)?
+    check | mate ?
+  pawn:
+    file_spec
+    (
+        captures
+        dest_file
+    )?
+    dest_rank
+    promotion ?
+    check | mate ?
+Comment:
+    ; ... \n
+    { ... }
+Result:
+   1/2-1/2 | 1-0 | 0-1
+-}
+
