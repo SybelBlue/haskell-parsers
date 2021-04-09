@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module SqlParser where
 
 import Control.Monad
@@ -5,11 +6,12 @@ import Control.Monad
 import Text.Parsec
 import Text.Parsec.String
 import Data.Functor
+import Data.Char
 
 {-
 query         =  select, ws, from, [ ws, join ], [ ws, where ] ;
 * select        =  "SELECT ", column-id, [ { ", ", column-id } ] ;
-from          =  "FROM ", table-name, [ { ws, join } ] ;
+* from          =  "FROM ", table-name, [ { ws, join } ] ;
 * join          =  "JOIN ", table-name, " on ", value-test ;
 * where         =  "WHERE ", value-test ;
 * value-test    =  value, comparison, value;
@@ -43,7 +45,9 @@ select = symbol "SELECT" *> columnName `sepBy1` (char ',' <* many1 whitespace)
 
 whereP = symbol "WHERE" *> valueTest
 
-joinP = (,) <$> (symbol "JOIN" *> tableName) <*> (many1 whitespace *> symbol "on" *> valueTest)
+joinP = (,) <$> (symbol "JOIN" *> tableName) <*> (symbol "on" *> valueTest)
+
+fromP = (,) <$> (symbol "FROM" *> tableName) <*> joinP `sepBy` many1 whitespace
 
 comparison :: Parser BinOp
 comparison = char ' ' *> (
@@ -63,7 +67,7 @@ whitespace = oneOf " \n"
 identifier :: Parser String
 identifier = many1 (alphaNum <|> char '_') <* many whitespace
 
-symbol s = string s <* many1 whitespace
+symbol s = uncasedString s <* many1 whitespace
 
 tableName = identifier
 
@@ -80,7 +84,16 @@ quoted = char '"' *> (concat <$> many character) <* char '"'
         nonEscape = noneOf "\\\"\0\n\r\v\t\b\f"
         escape = (:) <$> char '\\' <*> ((:[]) <$> oneOf "\\\"0nrvtbf")
 
+uncasedString :: String -> Parser String
+uncasedString = foldr folder (return [])
+  where folder c tail = ((:) <$> (char (toLower c) <|> char (toUpper c))) <*> tail
+
 numeric = do
     head <- many1 digit
     tail <- ((:) <$> char '.' <*> many1 digit) <|> return []
     return $ read (head ++ tail)
+
+sqlEngine :: [(String,[[(String,String)]])] -> String -> [[(String,String)]]
+sqlEngine database = execute where
+  execute :: String -> [[(String,String)]]
+  execute query = undefined
