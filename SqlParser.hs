@@ -10,16 +10,18 @@ import Data.Functor
 query         =  select, ws, from, [ ws, join ], [ ws, where ] ;
 * select        =  "SELECT ", column-id, [ { ", ", column-id } ] ;
 from          =  "FROM ", table-name, [ { ws, join } ] ;
-join          =  "JOIN ", table-name, " on ", value-test ;
-where         =  "WHERE ", value-test ;
-value-test    =  value, comparison, value;
+* join          =  "JOIN ", table-name, " on ", value-test ;
+* where         =  "WHERE ", value-test ;
+* value-test    =  value, comparison, value;
 * column-id     =  table-name, ".", column-name ;
 * table-name    = ? a valid SQL table name ? ;
 * column-name   = ? a valid SQL column name ? ;
-value         =  column-id | ? a number ? | ? a SQL single-quoted string ? ;
+* value         =  column-id | ? a number ? | ? a SQL single-quoted string ? ;
 * comparison    =  " = " | " > " | " < " | " <= " | " >= " | " <> " ;
 * ws            = " " | "\n" | ws, ws ;
 -}
+
+type ValueTest = (SQLValue, BinOp, SQLValue)
 
 data SQLValue
     = ColId (String, String)
@@ -37,6 +39,12 @@ data BinOp
     | Ne
     deriving (Show, Eq)
 
+select = symbol "SELECT" *> columnName `sepBy1` (char ',' <* many1 whitespace)
+
+whereP = symbol "WHERE" *> valueTest
+
+joinP = (,) <$> (symbol "JOIN" *> tableName) <*> (many1 whitespace *> symbol "on" *> valueTest)
+
 comparison :: Parser BinOp
 comparison = char ' ' *> (
     (char '=' $> Eq) <|>
@@ -46,6 +54,9 @@ comparison = char ' ' *> (
     (string ">=" $> Ge) <|>
     (string "<>" $> Ne)
     ) <* char ' '
+
+valueTest :: Parser ValueTest
+valueTest = (,,) <$> value <*> comparison <*> value
 
 whitespace = oneOf " \n"
 
@@ -73,5 +84,3 @@ numeric = do
     head <- many1 digit
     tail <- ((:) <$> char '.' <*> many1 digit) <|> return []
     return $ read (head ++ tail)
-
-select = symbol "SELECT" *> columnName `sepBy1` (char ',' <* many1 whitespace)
