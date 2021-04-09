@@ -16,13 +16,18 @@ value-test    =  value, comparison, value;
 * column-id     =  table-name, ".", column-name ;
 * table-name    = ? a valid SQL table name ? ;
 * column-name   = ? a valid SQL column name ? ;
-value         =  column-id | const
+value         =  column-id | ? a number ? | ? a SQL single-quoted string ? ;
 * comparison    =  " = " | " > " | " < " | " <= " | " >= " | " <> " ;
-const         =  ? a number ? | ? a SQL single-quoted string ? ;
 * ws            = " " | "\n" | ws, ws ;
 -}
 
-data Comparison 
+data SQLValue
+    = ColId (String, String)
+    | Quote String
+    | Number Float
+    deriving (Show, Eq)
+
+data BinOp 
     = Eq
     | Lt
     | Gt
@@ -32,7 +37,7 @@ data Comparison
     | Ne
     deriving (Show, Eq)
 
-comparison :: Parser Comparison
+comparison :: Parser BinOp
 comparison = char ' ' *> (
     (char '=' $> Eq) <|>
     (char '>' $> Lt) <|>
@@ -54,5 +59,19 @@ tableName = identifier
 columnName = identifier
 
 columnId = (,) <$> identifier <*> (char '.' >> identifier)
+
+value :: Parser SQLValue
+value = (Number <$> try numeric) <|> (Quote <$> quoted) <|> (ColId <$> columnId)
+
+-- thanks https://stackoverflow.com/questions/24106314/parser-for-quoted-string-using-parsec
+quoted = char '"' *> (concat <$> many character) <* char '"'
+  where character = (pure <$> nonEscape) <|> escape
+        nonEscape = noneOf "\\\"\0\n\r\v\t\b\f"
+        escape = (:) <$> char '\\' <*> ((:[]) <$> oneOf "\\\"0nrvtbf")
+
+numeric = do
+    head <- many1 digit
+    tail <- ((:) <$> char '.' <*> many1 digit) <|> return []
+    return $ read (head ++ tail)
 
 select = symbol "SELECT" *> columnName `sepBy1` (char ',' <* many1 whitespace)
