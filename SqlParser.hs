@@ -47,7 +47,7 @@ whereP = symbol "WHERE" *> valueTest
 
 joinP = (,) <$> (symbol "JOIN" *> tableName) <*> (symbol "on" *> valueTest)
 
-fromP = (,) <$> (symbol "FROM" *> tableName) <*> joinP `sepBy` many1 whitespace
+fromP = (,) <$> (symbol "FROM" *> tableName) <*> (joinP `sepBy` many1 whitespace)
 
 comparison :: Parser BinOp
 comparison = char ' ' *> (
