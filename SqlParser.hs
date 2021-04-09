@@ -43,13 +43,17 @@ comparison = char ' ' *> (
     ) <* char ' '
 
 
-whitespace = void . many $ oneOf " \n"
+whitespace = oneOf " \n"
 
 identifier :: Parser String
-identifier = many1 (alphaNum <|> char '_') <* whitespace
+identifier = many1 (alphaNum <|> char '_') <* many whitespace
+
+symbol s = string s <* many1 whitespace
 
 tableName = identifier
 
 columnName = identifier
 
 columnId = (,) <$> identifier <*> (char '.' >> identifier)
+
+select = symbol "SELECT" *> columnName `sepBy1` (char ',' <* many1 whitespace)
