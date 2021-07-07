@@ -45,7 +45,7 @@ rawSymbol :: Parser String
 rawSymbol = many1 $ noneOf (whitespaceChars ++ "[]")
 
 symbol :: Parser String
-symbol = lexeme $ rawSymbol 
+symbol = lexeme rawSymbol 
 
 strLexeme :: String -> Parser ()
 strLexeme = void . lexeme . string
@@ -69,7 +69,7 @@ node :: Parser Node
 node =
   do
     name <- symbol
-    values <- lexeme $ rawSymbol `sepEndBy` (oneOf " \t")
+    values <- lexeme $ rawSymbol `sepEndBy` oneOf " \t"
     return $ Node { name, values }
 
 nodeBlock :: Parser [Node]
