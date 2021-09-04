@@ -26,16 +26,16 @@ module IMPInterpreter where
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-data IMP = I | B
+data ImpData = I | B
 
-type SymMap = [(Symbol, IMP)]
+type SymMap = [(Symbol, ImpData)]
 
-data Entry :: Symbol -> IMP -> Type where
-    E :: forall n o. IMPType o -> Entry n o
+data Entry :: Symbol -> ImpData -> Type where
+    E :: forall n o. ImpType o -> Entry n o
 
-type family  IMPType (o :: IMP) = (res :: Type) | res -> o where
-    IMPType I = Int
-    IMPType B = Bool
+type family ImpType (o :: ImpData) = (res :: Type) | res -> o where
+    ImpType I = Int
+    ImpType B = Bool
 
 data Envr :: SymMap -> Type where
     Nil :: Envr '[]
@@ -47,7 +47,7 @@ exampleEnvr = E @"a" (3 :: Int) :> E @"b" True :> Nil
 data Expr t where
     Skip :: Expr ()
 
-    Lit :: forall o a. (Show a, a ~ IMPType o) => IMPType o -> Expr a
+    Lit :: forall o a. (Show a, a ~ ImpType o) => ImpType o -> Expr a
 
     Asn :: Show a => String -> Expr a -> Expr ()
     Val :: String -> Expr a -- how do I fix this
