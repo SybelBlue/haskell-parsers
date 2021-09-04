@@ -52,9 +52,9 @@ data Expr t where
     Asn :: Show a => String -> Expr a -> Expr ()
     Val :: String -> Expr a -- how do I fix this
     
-    Add :: Expr Int -> Expr Int -> Expr Int
-    Sub :: Expr Int -> Expr Int -> Expr Int
-    Mul :: Expr Int -> Expr Int -> Expr Int
+    Add :: Num a => Expr a -> Expr a -> Expr a
+    Sub :: Num a => Expr a -> Expr a -> Expr a
+    Mul :: Num a => Expr a -> Expr a -> Expr a
 
     And :: Expr Bool -> Expr Bool -> Expr Bool
     Or  :: Expr Bool -> Expr Bool -> Expr Bool
@@ -84,4 +84,4 @@ instance Show t => Show (Expr t) where
     show (Whl e0 e1) = "Whl (" ++ show e0 ++ ") (" ++ show e1 ++ ")"
     show (Seq e0 e1) = "Seq (" ++ show e0 ++ ") (" ++ show e1 ++ ")"
 
-main = print $ Seq (Asn "a" (Lit (3 :: Int))) (Whl (IMPInterpreter.GT (Val "a") (Lit (0 :: Int))) (Asn "a" (Sub (Val "a") (Lit 1))))
+main = print $ Seq (Asn "a" (Lit (3 :: Int))) (Whl (IMPInterpreter.GT (Val "a") (Lit (0 :: Int))) (Asn "a" (Sub (Val "a") (Lit (1 :: Int)))))
