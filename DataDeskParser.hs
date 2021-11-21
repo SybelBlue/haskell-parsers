@@ -1,25 +1,21 @@
-{-# OPTIONS -fno-warn-unused-do-bind #-}  -- don't warn on unused parse captures
+{-# OPTIONS -fno-warn-unused-do-bind #-}
+-- don't warn on unused parse captures
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
 
 module DataDeskParser where
 
-import Data.List (find)
-import Data.Tuple (fst, snd)
-import Data.Maybe (fromJust)
-
-import Data.Functor.Identity (Identity)
-
 import Control.Monad (void)
-
-import Text.Parsec 
-import Text.Parsec.Combinator (eof, sepEndBy)
-import Text.Parsec.String (Parser)
-
-import Text.Parsec.Expr 
-
+import Data.Functor.Identity (Identity)
+import Data.List (find)
+import Data.Maybe (fromJust)
+import Data.Tuple (fst, snd)
 import System.Environment (getArgs)
+import Text.Parsec
+import Text.Parsec.Combinator (eof, sepEndBy)
+import Text.Parsec.Expr
+import Text.Parsec.String (Parser)
 
 failNothing :: Monad m => String -> Maybe a -> m a
 failNothing msg = maybe (fail msg) return
@@ -51,7 +47,7 @@ notChar :: Char -> Parser Char
 notChar c = satisfy (c /=)
 
 lexeme :: Parser a -> Parser a
-lexeme p = p <* spaces 
+lexeme p = p <* spaces
 
 identifierChar :: Parser Char
 identifierChar = alphaNum <|> char '_'
@@ -75,15 +71,17 @@ doubleColon :: Parser ()
 doubleColon = void $ lexeme $ string "::"
 
 numberLiteral :: Parser String
-numberLiteral = lexeme $
-  (:) <$> digit <*> many (alphaNum <|> char '.')
+numberLiteral =
+  lexeme $
+    (:) <$> digit <*> many (alphaNum <|> char '.')
 
 betweenChars :: (Char, Char) -> Parser a -> Parser a
 betweenChars (a, b) = between (lexeme $ char a) (lexeme $ char b)
 
 stringLiteral :: Parser String
 stringLiteral = betweenChars ('"', '"') (many innerChar)
-  where innerChar = noneOf ['\\','\"'] <|> escapedChar
+  where
+    innerChar = noneOf ['\\', '\"'] <|> escapedChar
 
 escapedChar :: Parser Char
 escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
@@ -93,18 +91,19 @@ escapedChar = getEscape <$> char '\\' *> oneOf (fst <$> escapedPairs)
 
 charLiteral :: Parser Char
 charLiteral = betweenChars ('\'', '\'') innerChar
-  where innerChar = notChar '\\' <|> escapedChar
+  where
+    innerChar = notChar '\\' <|> escapedChar
 
 toUnrOp :: Char -> Maybe UnrOp
 toUnrOp c = findPair c unrOpPairs
 
 simpleExpression :: Parser Expr
-simpleExpression
-  = betweenChars ('(', ')') expression
-  <|> (NumLit <$> numberLiteral)
-  <|> (StrLit <$> stringLiteral)
-  <|> (ChrLit <$> charLiteral)
-  <|> Idntfr <$> identifier
+simpleExpression =
+  betweenChars ('(', ')') expression
+    <|> (NumLit <$> numberLiteral)
+    <|> (StrLit <$> stringLiteral)
+    <|> (ChrLit <$> charLiteral)
+    <|> Idntfr <$> identifier
 
 expression :: Parser Expr
 expression = try nAryExpression <|> simpleExpression
@@ -125,17 +124,18 @@ nAryExpression :: Parser Expr
 nAryExpression = buildExpressionParser table simpleExpression
 
 table :: [[Operator String () Identity Expr]]
-table = [ [ unary '~', unary '-']
-        , [ binary "&" AssocLeft, binary "|" AssocLeft ]
-        , [ binary "<<" AssocRight, binary ">>" AssocRight ]
-        , [ binary "*" AssocLeft, binary "/" AssocLeft, binary "%" AssocLeft ]
-        , [ binary "+" AssocLeft, binary "-" AssocLeft ]
-        -- ,[binary "<" AssocNone, binary ">" AssocNone]
-        , [ binary "=" AssocRight ]
-        , [ unary '!' ]
-        , [ binary "&&" AssocLeft ]
-        , [ binary "||" AssocLeft ]
-        ]
+table =
+  [ [unary '~', unary '-'],
+    [binary "&" AssocLeft, binary "|" AssocLeft],
+    [binary "<<" AssocRight, binary ">>" AssocRight],
+    [binary "*" AssocLeft, binary "/" AssocLeft, binary "%" AssocLeft],
+    [binary "+" AssocLeft, binary "-" AssocLeft],
+    -- ,[binary "<" AssocNone, binary ">" AssocNone]
+    [binary "=" AssocRight],
+    [unary '!'],
+    [binary "&&" AssocLeft],
+    [binary "||" AssocLeft]
+  ]
   where
     binary name assoc = Infix (flip BinExp <$> binaryOperation name) assoc
     unary name = Prefix (UnrExp <$> unaryOperation name)
@@ -143,6 +143,7 @@ table = [ [ unary '~', unary '-']
 type Identifier = String
 
 data Tag = Tag Identifier [Expr] deriving (Show, Eq)
+
 data Tagged a = Tagged [Tag] a deriving (Show, Eq)
 
 data Declaration = Declaration Identifier Type deriving (Show, Eq)
@@ -157,9 +158,13 @@ data Expr
   deriving (Show, Eq)
 
 type FlagsLiteral = [Tagged Identifier]
+
 type EnumLiteral = [Tagged Identifier]
+
 type StructLiteral = [Tagged Declaration]
+
 type UnionLiteral = [Tagged Declaration]
+
 type ProcLiteral = ([Tagged Declaration], Maybe Type)
 
 data Type
@@ -198,22 +203,22 @@ findPair x = fmap snd . find (\(s, _) -> s == x)
 
 -- Warning: in precedence order
 binOpPairs :: [(String, BinOp)]
-binOpPairs = 
-  [ ("&&", BoolAnd)
-  , ("||", BoolOr)
-  , ("<<", LBS)
-  , (">>", RBS)
-  , ("&", BitAnd)
-  , ("|", BitOr)
-  , ("*", Mult)
-  , ("/", Div)  
-  , ("%", Mod)
-  , ("+", Plus)
-  , ("-", Minus)
+binOpPairs =
+  [ ("&&", BoolAnd),
+    ("||", BoolOr),
+    ("<<", LBS),
+    (">>", RBS),
+    ("&", BitAnd),
+    ("|", BitOr),
+    ("*", Mult),
+    ("/", Div),
+    ("%", Mod),
+    ("+", Plus),
+    ("-", Minus)
   ]
 
 toBinOp :: String -> Maybe BinOp
-toBinOp s = findPair s binOpPairs 
+toBinOp s = findPair s binOpPairs
 
 data UnrOp
   = NumNeg
@@ -223,20 +228,21 @@ data UnrOp
 
 unrOpPairs :: [(Char, UnrOp)]
 unrOpPairs =
-  [ ('-', NumNeg)
-  , ('!', BoolNot)
-  , ('~', BitNeg)
+  [ ('-', NumNeg),
+    ('!', BoolNot),
+    ('~', BitNeg)
   ]
 
 typeP :: Parser Type
-typeP = star
+typeP =
+  star
     <|> (TStruct <$> structLiteral)
     <|> (TUnion <$> unionLiteral)
-    <|> array 
+    <|> array
     <|> (TIdntfr <$> identifier)
-    where
-      star = (lexeme $ char '*') *> (Pointer <$>  typeP)
-      array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
+  where
+    star = (lexeme $ char '*') *> (Pointer <$> typeP)
+    array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
 
 declaration :: Parser Declaration
 declaration = Declaration <$> (identifier <* colon) <*> typeP
@@ -245,7 +251,7 @@ declarationList :: (Char, Char) -> Parser [Tagged Declaration]
 declarationList c = betweenChars c $ tagged declaration `sepEndBy` semicolonOrComma
 
 betweenBraces :: Parser a -> Parser a
-betweenBraces = betweenChars ('{', '}') 
+betweenBraces = betweenChars ('{', '}')
 
 keywordThen :: Identifier -> Parser a -> Parser a
 keywordThen k p = (try $ keyword k) *> p
@@ -263,13 +269,13 @@ statement :: Parser (Tagged Statement)
 statement = skipMany (try comment) *> tagged simpleStatement
 
 simpleStatement :: Parser Statement
-simpleStatement
-  =   (identified Union unionLiteral)
-  <|> (identified Struct structLiteral)
-  <|> (identified Flags flagsLiteral)
-  <|> (identified Enum enumLiteral)
-  <|> (identified Proc procLiteral)
-  <|> (identified Const expression)
+simpleStatement =
+  (identified Union unionLiteral)
+    <|> (identified Struct structLiteral)
+    <|> (identified Flags flagsLiteral)
+    <|> (identified Enum enumLiteral)
+    <|> (identified Proc procLiteral)
+    <|> (identified Const expression)
 
 comment :: Parser ()
 comment = (try lineComment) <|> (try blockComment)
@@ -305,10 +311,10 @@ argList :: Parser [Expr]
 argList = genericParamList expression
 
 script :: Parser [Tagged Statement]
-script = (:) <$> statement <*> ((lookAhead eof *> return []) <|> script)
+script = (:) <$> statement <*> ((lookAhead eof Data.Functor.$> []) <|> script)
 
-procLiteral :: Parser ProcLiteral 
+procLiteral :: Parser ProcLiteral
 procLiteral =
   (,)
     <$> "proc" `keywordThen` declarationList ('(', ')')
-    <*> (optionMaybe $ "->" `keywordThen` typeP)
+    <*> optionMaybe ("->" `keywordThen` typeP)
