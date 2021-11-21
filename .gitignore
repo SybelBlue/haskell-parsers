@@ -5,3 +5,4 @@ tmp/
 
 *.o
 *.hi
+ttpc/dist-newstyle
