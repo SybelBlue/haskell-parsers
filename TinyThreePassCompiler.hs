@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
 
 module TinyThreePassCompiler where
@@ -5,17 +6,19 @@ module TinyThreePassCompiler where
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
+import Data.Function
 import Data.List
 import Data.Maybe
+
+data BinOp = Add
+  | Sub
+  | Mul
+  | Div deriving (Eq, Show)
 
 data AST
   = Imm Int
   | Arg Int
-  | Add AST AST
-  | Sub AST AST
-  | Mul AST AST
-  | Div AST AST
-  | Parens AST
+  | BinOp BinOp AST AST
   deriving (Eq, Show)
 
 data Token
@@ -86,10 +89,9 @@ instance Alternative (Parser s) where
 instance MonadPlus (Parser s)
 
 pass1 :: String -> AST
-pass1 = unwrap p . tokenize
+pass1 = unwrap program . tokenize
   where
-    p :: Parser Token AST
-    p = do
+    program = do
       token (TChar '[')
       args <- takeUntil (TChar ']')
       arg_names <- mapM extractor args
@@ -99,46 +101,28 @@ pass1 = unwrap p . tokenize
     body args = parser (parse (expression args) . reverse)
     expression args = do
       s <- term args
-      (do
-        op <- next "op"
-        case op of
-          TChar '+' -> do
-            f <- expression args
-            return (Add f s)
-          TChar '-' -> do
-            f <- expression args
-            return (Sub f s)
-          _ ->
-            fail "expecting op") 
+      binOp ('+', Add) ('-', Sub) (expression args) (return s)
         <|> return s
     term args = do
       s <- factor args
-      (do
-        op <- next "op"
-        case op of
-          TChar '*' -> do
-            f <- term args
-            return (Mul f s)
-          TChar '/' -> do
-            f <- term args
-            return (Div f s)
-          _ ->
-            fail "expecting op") 
+      binOp ('*', Mul) ('/', Div) (term args) (return s)
         <|> return s
     factor args = parenExpr args <|> number <|> variable args
     parenExpr args = token (TChar ')') *> expression args <* token (TChar '(')
-    variable args = do
-      x <- next "variable name"
-      case x of
-        TStr n -> if n `elem` args 
-          then return (Arg . fromJust $ n `elemIndex` args) 
-          else fail ("expecting name in: " ++ show args)
-        _ -> fail "expecting variable name"
-    number = do
-      x <- next "number"
-      case x of
-        TInt n -> return (Imm n)
-        _ -> fail "number"
+    variable args =
+      next "variable name"
+        >>= \case
+          TStr n | n `elem` args -> return (Arg . fromJust $ n `elemIndex` args)
+          _ -> fail ("expecting name in: " ++ show args)
+    number =
+      next "number"
+        >>= \case TInt n -> return (Imm n); _ -> fail "number"
+    binOp (x0, x1) (y0, y1) = liftM3 BinOp
+      ( next "op" >>= \case
+          TChar c | c == x0 -> return x1
+          TChar c | c == y0 -> return y1
+          _ -> fail $ "expecting " ++ [x0] ++ " or " ++ [y0]
+      )
 
 token t = do
   x <- next (show t)
@@ -152,7 +136,22 @@ takeUntil x = parser $ \ss ->
 next msg = parser (maybeToRight ("eof expecting " ++ msg) . uncons)
 
 pass2 :: AST -> AST
-pass2 = undefined
+pass2 (BinOp op x y) = case (op, pass2 x, pass2 y) of
+    (Add, Imm 0, y) -> y
+    (Add, x, Imm 0) -> x
+    (Add, Imm a, Imm b) -> Imm (a + b)
+    (Sub, x, Imm 0) -> x
+    (Sub, Imm a, Imm b) -> Imm (a - b)
+    (Mul, Imm 0, _) -> Imm 0
+    (Mul, _, Imm 0) -> Imm 0
+    (Mul, Imm 1, y) -> y
+    (Mul, x, Imm 1) -> x
+    (Mul, Imm a, Imm b) -> Imm (a * b)
+    (Div, Imm 0, _) -> Imm 0
+    (Div, x, Imm 1) -> x
+    (Div, Imm a, Imm b) -> Imm (a `div` b)
+    (op, x, y) -> BinOp op x y
+pass2 ast = ast
 
 pass3 :: AST -> [String]
 pass3 = undefined
