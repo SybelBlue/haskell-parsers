@@ -1,19 +1,38 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module TinyThreePassCompiler where
 
 import Control.Applicative
 import Control.Arrow
-import Control.Monad
+import Control.Monad.State
 import Data.Functor
 import Data.List
 
-data BinOp = Add | Sub | Mul | Div deriving (Eq, Show)
+data BinOp
+  = Add
+  | Sub
+  | Mul
+  | Div
+  deriving (Eq, Show)
 
 data AST
   = Imm Int
   | Arg Int
   | BinOp BinOp AST AST
+  deriving (Eq, Show)
+
+data Instruction
+  = IM Int
+  | AR Int
+  | AD
+  | SU
+  | MU
+  | DI
+  | PU
+  | PO
+  | SW
   deriving (Eq, Show)
 
 data Token
@@ -37,39 +56,27 @@ tokenize xxs@(c : cs)
     (i, is) = span (`elem` digit) xxs
     (s, ss) = span (`elem` alpha) xxs
 
-compile :: String -> [String]
-compile = pass3 . pass2 . pass1
+compile :: String -> Either ParseError [Instruction]
+compile s = pass3 . pass2 <$> pass1 s
 
-newtype Parser s t = Parser {parse :: [s] -> Maybe (t, [s])}
-parser f = Parser {parse = f}
+type ParseError = String
 
-instance Functor (Parser s) where
-  f `fmap` p = parser (fmap (first f) . parse p)
+type Parser s t = StateT [s] (Either ParseError) t
 
-instance Applicative (Parser s) where
-  pure = return
-  liftA2 fabc pa pb = parser $ \ss -> do
-    (a, rest) <- parse pa ss
-    first (fabc a) <$> parse pb rest
+instance MonadFail (Either ParseError) where fail = Left
 
-instance Monad (Parser s) where
-  return x = parser (Just . (,) x)
-  pa >>= fapb = parser (uncurry (parse . fapb) <=< parse pa)
-
-
-instance Alternative (Parser s) where
-  empty = parser (const Nothing)
-  pa <|> pb = parser (\ss -> parse pa ss <|> parse pb ss)
-
-pass1 :: String -> AST
-pass1 = (\(Just (ast, [])) -> ast) . parse program . tokenize
+pass1 :: String -> Either ParseError AST
+pass1 = finish <=< runStateT program . tokenize
   where
+    finish (ast, ts) = if null ts then return ast else fail "expected eof"
     program = do
       char '['
       args <- takeUntil (TChar ']')
-      arg_names <- mapM (\case TStr n -> return n; _ -> empty) args
+      arg_names <- mapM extractor args
       body arg_names
-    body args = parser (parse (expression args) . reverse)
+    extractor (TStr n) = return n
+    extractor t = fail ("not a valid param name: " ++ show t)
+    body args = parser (runStateT (expression args) . reverse)
     expression args = do
       s <- term args
       binOp ('+', Add) ('-', Sub) (expression args) (return s)
@@ -81,14 +88,20 @@ pass1 = (\(Just (ast, [])) -> ast) . parse program . tokenize
     factor args = parenExpr args <|> number <|> variable args
     parenExpr args = char ')' *> expression args <* char '('
     variable args =
-      next >>= \case
-        TStr n | n `elem` args -> maybe empty (return . Arg) (n `elemIndex` args)
-        _ -> empty
-    number = next >>= \case TInt n -> return (Imm n); _ -> empty
+      next "variable name" >>= \case
+        TStr n | n `elem` args -> maybe (fail "impossible") (return . Arg) (n `elemIndex` args)
+        _ -> fail ("expecting name in: " ++ show args)
+    number = next "number" >>= \case TInt n -> return (Imm n); _ -> fail "expecting number"
     binOp (x0, x1) (y0, y1) = liftM3 BinOp ((char x0 $> x1) <|> (char y0 $> y1))
-    char t = next >>= (`unless` empty) . (== TChar t)
-    takeUntil x = parser (\ss -> second tail . flip splitAt ss <$> elemIndex x ss)
-    next = parser uncons
+    char t = do
+      x <- next ("expecting char " ++ show t)
+      unless (x == TChar t) (fail $ "expecting char " ++ show t)
+    takeUntil x = parser $ \ss ->
+      case elemIndex x ss of
+        Just n -> Right $ second tail (splitAt n ss)
+        Nothing -> Left ("End of input searching for " ++ show x)
+    next msg = parser (maybe (Left $ "eof expecting " ++ msg) Right . uncons)
+    parser runStateT = StateT {runStateT}
 
 pass2 :: AST -> AST
 pass2 (BinOp op x y) = case (op, pass2 x, pass2 y) of
@@ -108,13 +121,13 @@ pass2 (BinOp op x y) = case (op, pass2 x, pass2 y) of
   (op, x, y) -> BinOp op x y
 pass2 ast = ast
 
-pass3 :: AST -> [String]
-pass3 (Arg n) = ["AR " ++ show n]
-pass3 (Imm n) = ["IM " ++ show n]
+pass3 :: AST -> [Instruction]
+pass3 (Arg n) = [AR n]
+pass3 (Imm n) = [IM n]
 pass3 (BinOp op x y) =
   case (pass3 x, pass3 y) of
-    ([x], ys) -> ys ++ ["SW", x, opCode]
-    (xs, [y]) -> xs ++ ["SW", y] ++ ["SW" | op == Sub || op == Div] ++ [opCode]
-    (xs, ys) -> xs ++ ["PU"] ++ ys ++ ["SW", "PO", opCode]
+    ([x], ys) -> ys ++ [SW, x, opCode]
+    (xs, [y]) -> xs ++ [SW, y] ++ [SW | op == Sub || op == Div] ++ [opCode]
+    (xs, ys) -> xs ++ [PU] ++ ys ++ [SW, PO, opCode]
   where
-    opCode = case op of Add -> "AD"; Sub -> "SU"; Mul -> "MU"; Div -> "DI"
+    opCode = case op of Add -> AD; Sub -> SU; Mul -> MU; Div -> DI
