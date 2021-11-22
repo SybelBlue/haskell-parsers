@@ -6,14 +6,9 @@ module TinyThreePassCompiler where
 import Control.Applicative
 import Control.Arrow
 import Control.Monad
-import Data.Function
 import Data.List
-import Data.Maybe
 
-data BinOp = Add
-  | Sub
-  | Mul
-  | Div deriving (Eq, Show)
+data BinOp = Add | Sub | Mul | Div deriving (Eq, Show)
 
 data AST
   = Imm Int
@@ -45,9 +40,7 @@ tokenize xxs@(c : cs)
 compile :: String -> [String]
 compile = pass3 . pass2 . pass1
 
-type ParseError = String
-
-newtype Parser s t = Parser {parse :: [s] -> Either ParseError (t, [s])}
+newtype Parser s t = Parser {parse :: [s] -> Either String (t, [s])}
 
 unwrap p ss =
   case parse p ss of
@@ -86,8 +79,6 @@ instance Alternative (Parser s) where
         pass -> pass
       pass -> pass
 
-instance MonadPlus (Parser s)
-
 pass1 :: String -> AST
 pass1 = unwrap program . tokenize
   where
@@ -112,46 +103,54 @@ pass1 = unwrap program . tokenize
     variable args =
       next "variable name"
         >>= \case
-          TStr n | n `elem` args -> return (Arg . fromJust $ n `elemIndex` args)
+          TStr n | n `elem` args -> (\(Just x) -> return $ Arg x) (n `elemIndex` args)
           _ -> fail ("expecting name in: " ++ show args)
     number =
       next "number"
         >>= \case TInt n -> return (Imm n); _ -> fail "number"
-    binOp (x0, x1) (y0, y1) = liftM3 BinOp
-      ( next "op" >>= \case
-          TChar c | c == x0 -> return x1
-          TChar c | c == y0 -> return y1
-          _ -> fail $ "expecting " ++ [x0] ++ " or " ++ [y0]
-      )
-
-token t = do
-  x <- next (show t)
-  if x == t then return () else fail ("expecting " ++ show t)
-
-takeUntil x = parser $ \ss ->
-  case elemIndex x ss of
-    Just n -> Right $ second tail (splitAt n ss)
-    Nothing -> Left ("End of input searching for " ++ show x)
+    binOp (x0, x1) (y0, y1) =
+      liftM3
+        BinOp
+        ( next "op" >>= \case
+            TChar c | c == x0 -> return x1
+            TChar c | c == y0 -> return y1
+            _ -> fail $ "expecting " ++ [x0] ++ " or " ++ [y0]
+        )
+    token t = do
+      x <- next (show t)
+      if x == t then return () else fail ("expecting " ++ show t)
+    takeUntil x = parser $ \ss ->
+      case elemIndex x ss of
+        Just n -> Right (second tail (splitAt n ss))
+        Nothing -> Left ("End of input searching for " ++ show x)
 
 next msg = parser (maybeToRight ("eof expecting " ++ msg) . uncons)
 
 pass2 :: AST -> AST
 pass2 (BinOp op x y) = case (op, pass2 x, pass2 y) of
-    (Add, Imm 0, y) -> y
-    (Add, x, Imm 0) -> x
-    (Add, Imm a, Imm b) -> Imm (a + b)
-    (Sub, x, Imm 0) -> x
-    (Sub, Imm a, Imm b) -> Imm (a - b)
-    (Mul, Imm 0, _) -> Imm 0
-    (Mul, _, Imm 0) -> Imm 0
-    (Mul, Imm 1, y) -> y
-    (Mul, x, Imm 1) -> x
-    (Mul, Imm a, Imm b) -> Imm (a * b)
-    (Div, Imm 0, _) -> Imm 0
-    (Div, x, Imm 1) -> x
-    (Div, Imm a, Imm b) -> Imm (a `div` b)
-    (op, x, y) -> BinOp op x y
+  (Add, Imm 0, y) -> y
+  (Add, x, Imm 0) -> x
+  (Add, Imm a, Imm b) -> Imm (a + b)
+  (Sub, x, Imm 0) -> x
+  (Sub, Imm a, Imm b) -> Imm (a - b)
+  (Mul, Imm 0, _) -> Imm 0
+  (Mul, _, Imm 0) -> Imm 0
+  (Mul, Imm 1, y) -> y
+  (Mul, x, Imm 1) -> x
+  (Mul, Imm a, Imm b) -> Imm (a * b)
+  (Div, Imm 0, _) -> Imm 0
+  (Div, x, Imm 1) -> x
+  (Div, Imm a, Imm b) -> Imm (a `div` b)
+  (op, x, y) -> BinOp op x y
 pass2 ast = ast
 
 pass3 :: AST -> [String]
-pass3 = undefined
+pass3 (Arg n) = ["AR " ++ show n]
+pass3 (Imm n) = ["IM " ++ show n]
+pass3 (BinOp op x y) =
+  case (pass3 x, pass3 y) of
+    ([x], ys) -> ys ++ ["SW", x, opCode]
+    (xs, [y]) -> xs ++ ["SW", y, "SW", opCode]
+    (xs, ys) -> xs ++ ["PU"] ++ ys ++ ["SW", "PO", opCode]
+  where
+    opCode = case op of Add -> "AD"; Sub -> "SU"; Mul -> "MU"; Div -> "DI"
