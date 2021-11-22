@@ -137,9 +137,6 @@ data CPU = CPU { r0::Int, r1::Int, st::[Int] } deriving (Eq, Show)
 newCPU :: CPU
 newCPU = CPU { r0 = 0, r1 = 0, st = [] }
 
-set :: CPU -> Int -> CPU
-set cpu r0 = cpu { r0 }
-
 instruct :: [Int] -> CPU -> Instruction -> CPU
 instruct args cpu = \case  
   IM n -> set cpu n
@@ -151,6 +148,7 @@ instruct args cpu = \case
   PU -> cpu { st = r0 cpu : st cpu }
   PO -> let Just (r0, sta) = uncons (st cpu) in cpu { r0, st=sta }
   SW -> cpu { r0 = r1 cpu, r1 = r0 cpu }
+  where set cpu r0 = cpu { r0 }
 
 simulate :: [Int] -> CPU -> [Instruction] -> CPU
 simulate = foldl . instruct
