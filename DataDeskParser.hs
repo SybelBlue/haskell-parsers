@@ -1,9 +1,5 @@
 {-# OPTIONS -fno-warn-unused-do-bind #-}
 -- don't warn on unused parse captures
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TupleSections #-}
-
 module DataDeskParser where
 
 import Control.Monad (void)
@@ -16,8 +12,9 @@ import Text.Parsec
 import Text.Parsec.Combinator (eof, sepEndBy)
 import Text.Parsec.Expr
 import Text.Parsec.String (Parser)
+import qualified Data.Functor
 
-failNothing :: Monad m => String -> Maybe a -> m a
+failNothing :: MonadFail m => String -> Maybe a -> m a
 failNothing msg = maybe (fail msg) return
 
 parseWithEof :: Parser a -> String -> Either ParseError a
@@ -26,7 +23,7 @@ parseWithEof p = parse (spaces *> p <* eof) ""
 eol :: Parser ()
 eol = (void . lexeme $ char '\n') <|> eof
 
-whitespaceChars :: [Char]
+whitespaceChars :: String
 whitespaceChars = " \n\t"
 
 parseFile :: String -> IO ()
@@ -100,9 +97,9 @@ toUnrOp c = findPair c unrOpPairs
 simpleExpression :: Parser Expr
 simpleExpression =
   betweenChars ('(', ')') expression
-    <|> (NumLit <$> numberLiteral)
-    <|> (StrLit <$> stringLiteral)
-    <|> (ChrLit <$> charLiteral)
+    <|> NumLit <$> numberLiteral
+    <|> StrLit <$> stringLiteral
+    <|> ChrLit <$> charLiteral
     <|> Idntfr <$> identifier
 
 expression :: Parser Expr
@@ -115,10 +112,10 @@ unaryOps :: Parser Char
 unaryOps = lexeme $ choice (char . fst <$> unrOpPairs)
 
 binaryOperation :: String -> Parser BinOp
-binaryOperation op = (lexeme $ string op) *> (failNothing ("no such op " ++ op) $ toBinOp op)
+binaryOperation op = lexeme (string op) *> failNothing ("no such op " ++ op) (toBinOp op)
 
 unaryOperation :: Char -> Parser UnrOp
-unaryOperation op = (lexeme $ char op) *> (failNothing ("no such op " ++ [op]) $ toUnrOp op)
+unaryOperation op = lexeme (char op) *> failNothing ("no such op " ++ [op]) (toUnrOp op)
 
 nAryExpression :: Parser Expr
 nAryExpression = buildExpressionParser table simpleExpression
@@ -137,7 +134,7 @@ table =
     [binary "||" AssocLeft]
   ]
   where
-    binary name assoc = Infix (flip BinExp <$> binaryOperation name) assoc
+    binary name = Infix (flip BinExp <$> binaryOperation name)
     unary name = Prefix (UnrExp <$> unaryOperation name)
 
 type Identifier = String
@@ -236,13 +233,13 @@ unrOpPairs =
 typeP :: Parser Type
 typeP =
   star
-    <|> (TStruct <$> structLiteral)
-    <|> (TUnion <$> unionLiteral)
+    <|> TStruct <$> structLiteral
+    <|> TUnion <$> unionLiteral
     <|> array
-    <|> (TIdntfr <$> identifier)
+    <|> TIdntfr <$> identifier
   where
-    star = (lexeme $ char '*') *> (Pointer <$> typeP)
-    array = Array <$> (betweenChars ('[', ']') expression) <*> typeP
+    star = lexeme (char '*') *> (Pointer <$> typeP)
+    array = Array <$> betweenChars ('[', ']') expression <*> typeP
 
 declaration :: Parser Declaration
 declaration = Declaration <$> (identifier <* colon) <*> typeP
@@ -254,7 +251,7 @@ betweenBraces :: Parser a -> Parser a
 betweenBraces = betweenChars ('{', '}')
 
 keywordThen :: Identifier -> Parser a -> Parser a
-keywordThen k p = (try $ keyword k) *> p
+keywordThen k p = try (keyword k) *> p
 
 unionLiteral :: Parser StructLiteral
 unionLiteral = "union" `keywordThen` declarationList ('{', '}')
@@ -270,27 +267,27 @@ statement = skipMany (try comment) *> tagged simpleStatement
 
 simpleStatement :: Parser Statement
 simpleStatement =
-  (identified Union unionLiteral)
-    <|> (identified Struct structLiteral)
-    <|> (identified Flags flagsLiteral)
-    <|> (identified Enum enumLiteral)
-    <|> (identified Proc procLiteral)
-    <|> (identified Const expression)
+  identified Union unionLiteral
+    <|> identified Struct structLiteral
+    <|> identified Flags flagsLiteral
+    <|> identified Enum enumLiteral
+    <|> identified Proc procLiteral
+    <|> identified Const expression
 
 comment :: Parser ()
-comment = (try lineComment) <|> (try blockComment)
+comment = try lineComment <|> try blockComment
 
 lineComment :: Parser ()
-lineComment = void . lexeme $ (string "//") *> manyTill anyChar eol
+lineComment = void . lexeme $ string "//" *> manyTill anyChar eol
 
 blockComment :: Parser ()
-blockComment = void . lexeme $ (string "/*") *> manyTill anyChar (try $ string "*/")
+blockComment = void . lexeme $ string "/*" *> manyTill anyChar (try $ string "*/")
 
 identified :: (Identifier -> a -> Statement) -> Parser a -> Parser Statement
 identified f p = try (f <$> (identifier <* doubleColon) <*> p)
 
 identifierList :: Parser [Tagged Identifier]
-identifierList = betweenBraces ((tagged identifier) `sepEndBy` semicolonOrComma)
+identifierList = betweenBraces (tagged identifier `sepEndBy` semicolonOrComma)
 
 flagsLiteral :: Parser FlagsLiteral
 flagsLiteral = "flags" `keywordThen` identifierList
@@ -299,7 +296,7 @@ enumLiteral :: Parser EnumLiteral
 enumLiteral = "enum" `keywordThen` identifierList
 
 tag :: Parser Tag
-tag = Tag <$> ((lexeme $ char '@') *> identifier) <*> (try argList <|> return [])
+tag = Tag <$> (lexeme (char '@') *> identifier) <*> (try argList <|> return [])
 
 genericParamList :: Parser a -> Parser [a]
 genericParamList = betweenChars ('(', ')') . flip sepEndBy (lexeme $ char ',')
