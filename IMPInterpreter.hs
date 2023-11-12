@@ -52,8 +52,8 @@ data Expr t where
     Lit :: forall o a. (Show a, a ~ ImpType o) => ImpType o -> Expr a
 
     Asn :: forall n o s a. (a ~ ImpType o, Show a, Show n, HasField n (Envr s) a) => Envr s -> n -> Expr a -> Expr (Envr s)
-    Val :: forall n o s a. (a ~ ImpType o, Show n, HasField n (Envr s) a) => Envr s -> n -> Expr a 
-    
+    Val :: forall n o s a. (a ~ ImpType o, Show n, HasField n (Envr s) a) => Envr s -> n -> Expr a
+
     Add :: Num a => Expr a -> Expr a -> Expr a
     Sub :: Num a => Expr a -> Expr a -> Expr a
     Mul :: Num a => Expr a -> Expr a -> Expr a
@@ -110,7 +110,7 @@ type family FindH (n :: Symbol) (s :: SymMap) (s2 :: SymMap) :: Index n o s wher
     FindH n ('(n,o): s) s2 = DH
     FindH n ('(t,p): s) s2 = DT (FindH n s s2)
     FindH n '[]         s2 = TypeError (
-            Text "NameError: " :<>: Text n :<>: 
+            Text "NameError: " :<>: Text n :<>:
             Text " not in scope " :$$:
             Text "{" :<>: ShowSymMap s2 :<>: Text "}")
 
@@ -134,7 +134,7 @@ instance Get l => Get (DT l) where
 -- resolution for Get will generate the correct accessor
 -- function at compile time
 
-instance (Get (Find n s :: Index n o s), t ~ ImpType o) => 
+instance (Get (Find n s :: Index n o s), t ~ ImpType o) =>
             HasField n (Envr s) t where
   getField = getp @_ @_ @_ @(Find n s)
   {-# INLINE getField #-}

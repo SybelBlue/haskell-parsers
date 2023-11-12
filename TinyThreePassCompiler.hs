@@ -61,21 +61,17 @@ compile s = pass3 . pass2 <$> pass1 s
 
 type ParseError = String
 
-type Parser s t = StateT [s] (Either ParseError) t
+type Parser s = StateT [s] (Either ParseError)
+next msg = parser (maybe (Left $ "eof expecting " ++ msg) Right . uncons)
+parser runStateT = StateT {runStateT}
 
 instance MonadFail (Either ParseError) where fail = Left
 
 pass1 :: String -> Either ParseError AST
-pass1 = finish <=< runStateT program . tokenize
+pass1 = evalStateT (function <* eof) . tokenize
   where
-    finish (ast, ts) = if null ts then return ast else fail "expected eof"
-    program = do
-      char '['
-      args <- takeUntil (TChar ']')
-      arg_names <- mapM extractor args
-      body arg_names
-    extractor (TStr n) = return n
-    extractor t = fail ("not a valid param name: " ++ show t)
+    function = char '[' *> many name <* char ']' >>= body
+    eof = gets null >>= flip unless (fail "expecting eof")
     body args = parser (runStateT (expression args) . reverse)
     expression args = do
       s <- term args
@@ -87,10 +83,9 @@ pass1 = finish <=< runStateT program . tokenize
         <|> return s
     factor args = parenExpr args <|> number <|> variable args
     parenExpr args = char ')' *> expression args <* char '('
-    variable args =
-      next "variable name" >>= \case
-        TStr n | n `elem` args -> maybe (fail "impossible") (return . Arg) (n `elemIndex` args)
-        _ -> fail ("expecting name in: " ++ show args)
+    variable args = name >>= 
+      (\n -> maybe (fail $ "expecting one of: " ++ show args) (return . Arg) (n `elemIndex` args))
+    name = next "variable name" >>= \case TStr n -> return n; _ -> fail "expecting name"
     number = next "number" >>= \case TInt n -> return (Imm n); _ -> fail "expecting number"
     binOp (x0, x1) (y0, y1) = liftM3 BinOp ((char x0 $> x1) <|> (char y0 $> y1))
     char t = do
@@ -100,8 +95,6 @@ pass1 = finish <=< runStateT program . tokenize
       case elemIndex x ss of
         Just n -> Right $ second tail (splitAt n ss)
         Nothing -> Left ("End of input searching for " ++ show x)
-    next msg = parser (maybe (Left $ "eof expecting " ++ msg) Right . uncons)
-    parser runStateT = StateT {runStateT}
 
 pass2 :: AST -> AST
 pass2 (BinOp op x y) = case (op, pass2 x, pass2 y) of
@@ -132,23 +125,24 @@ pass3 (BinOp op x y) =
   where
     opCode = case op of Add -> AD; Sub -> SU; Mul -> MU; Div -> DI
 
-data CPU = CPU { r0::Int, r1::Int, st::[Int] } deriving (Eq, Show)
+data CPU = CPU {r0 :: Int, r1 :: Int, st :: [Int]} deriving (Eq, Show)
 
 newCPU :: CPU
-newCPU = CPU { r0 = 0, r1 = 0, st = [] }
+newCPU = CPU {r0 = 0, r1 = 0, st = []}
 
 instruct :: [Int] -> CPU -> Instruction -> CPU
-instruct args cpu = \case  
+instruct args cpu = \case
   IM n -> set cpu n
   AR n -> set cpu (args !! n)
   AD -> set cpu (r0 cpu + r1 cpu)
   SU -> set cpu (r0 cpu - r1 cpu)
   MU -> set cpu (r0 cpu * r1 cpu)
   DI -> set cpu (r0 cpu `div` r1 cpu)
-  PU -> cpu { st = r0 cpu : st cpu }
-  PO -> let Just (r0, sta) = uncons (st cpu) in cpu { r0, st=sta }
-  SW -> cpu { r0 = r1 cpu, r1 = r0 cpu }
-  where set cpu r0 = cpu { r0 }
+  PU -> cpu {st = r0 cpu : st cpu}
+  PO -> let Just (r0, sta) = uncons (st cpu) in cpu {r0, st = sta}
+  SW -> cpu {r0 = r1 cpu, r1 = r0 cpu}
+  where
+    set cpu r0 = cpu {r0}
 
 simulate :: [Int] -> CPU -> [Instruction] -> CPU
 simulate = foldl . instruct
